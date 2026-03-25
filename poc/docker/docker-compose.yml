@@ -4,7 +4,7 @@ services:
   # 1. ZooKeeper (Required for Kafka)
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
-    container_name: poc-zookeeper
+    container_name: am-zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -16,7 +16,7 @@ services:
   # 2. Kafka Broker
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: poc-kafka
+    container_name: am-kafka
     depends_on:
       - zookeeper
     ports:
@@ -39,7 +39,7 @@ services:
   # 3. PostgreSQL (이력 DB)
   postgres:
     image: postgres:15-alpine
-    container_name: poc-postgres
+    container_name: am-postgres
     ports:
       - "5432:5432"
     environment:
@@ -55,7 +55,7 @@ services:
   # 4. MongoDB (월별 이력 적재)
   mongodb:
     image: mongo:6.0
-    container_name: poc-mongodb
+    container_name: am-mongodb
     ports:
       - "27017:27017"
     environment:
@@ -70,7 +70,7 @@ services:
   # 5. Apache NiFi
   nifi:
     image: apache/nifi:2.0.0
-    container_name: poc-nifi
+    container_name: am-nifi
     ports:
       - "8080:8080"
     environment:
@@ -85,7 +85,7 @@ services:
   # 6. Flink JobManager
   jobmanager:
     image: flink:1.18.1-scala_2.12
-    container_name: poc-jobmanager
+    container_name: am-flink-jobmanager
     ports:
       - "8081:8081"
     command: jobmanager
@@ -97,12 +97,12 @@ services:
       - am-network
 
   # 7. Flink TaskManager
+  # ▶ 기동 시 반드시: docker compose up -d --scale taskmanager=2
   taskmanager:
     image: flink:1.18.1-scala_2.12
     depends_on:
       - jobmanager
     command: taskmanager
-    scale: 2
     environment:
       - |
         FLINK_PROPERTIES=
@@ -114,7 +114,7 @@ services:
   # 8. Prometheus
   prometheus:
     image: prom/prometheus:v2.45.0
-    container_name: poc-prometheus
+    container_name: am-prometheus
     ports:
       - "9090:9090"
     volumes:
@@ -125,7 +125,7 @@ services:
   # 9. Grafana
   grafana:
     image: grafana/grafana:10.0.3
-    container_name: poc-grafana
+    container_name: am-grafana
     ports:
       - "3000:3000"
     environment:

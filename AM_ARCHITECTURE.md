@@ -565,7 +565,7 @@ am-platform/
 | 컬럼명 | 타입 | 설명 |
 |--------|------|------|
 | id | BIGSERIAL PK | 자동 증가 ID |
-| tx_id | UUID | 트랜잭션 ID (NiFi 생성) |
+| tx_id | VARCHAR(35) | 트랜잭션 ID — 35자리 숫자 구조 |
 | request_id | VARCHAR(100) | 외부 요청 식별자 |
 | channel | VARCHAR(20) | 발송 채널 (SMS/MMS/RCS/FAX/EMAIL) |
 | sender | VARCHAR(50) | 발신번호 |
@@ -590,8 +590,11 @@ am-platform/
 | total_count | INTEGER | 총 발송 건수 |
 | success_count | INTEGER | 성공 건수 |
 | fail_count | INTEGER | 실패 건수 |
+| send_method_code | CHAR(2)  | 발송 방법 코드 | 
 | retry_count | INTEGER | 재처리 건수 |
+| dlq_count        | INTEGER  | DLQ 적재 건수 |                                       
 | avg_latency_ms | INTEGER | 평균 처리 지연(ms) |
+| p95_latency_ms   | INTEGER  | 95 백분위 처리 지연(ms) |                     
 | created_at | TIMESTAMPTZ DEFAULT NOW() | 레코드 생성 시각 |
 
 ### 10.2 인덱스 설계

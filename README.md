@@ -87,21 +87,21 @@ am-platform/
 
 | # | 작업 항목 | 산출물 | 상태 |
 |---|---------|--------|------|
-| 1 | docker-compose.yml 작성 (NiFi, Kafka, ZooKeeper, Flink, PostgreSQL, **MongoDB**, Prometheus, Grafana) | `poc/docker/docker-compose.yml` | ⬜ |
-| 2 | DB 초기화 스크립트 작성 (테이블, 인덱스, 초기 데이터) | `poc/init/init.sql` | ⬜ |
-| 3 | MongoDB 초기화 스크립트 작성 (월별 컬렉션·인덱스, 샘플 도큐먼트) | `poc/init/init-mongo.js` | ⬜ |
-| 4 | Kafka 토픽 초기화 스크립트 작성 (채널별 dispatch 토픽 포함 12개) | `poc/config/kafka-topics.sh` | ⬜ |
-| 5 | Kafka Connector 설정 파일 작성 (JdbcSink, MongoSink) | `poc/config/kafka-connectors/` | ⬜ |
-| 6 | 환경변수 설정 파일 작성 (`.env.example`) | `poc/docker/.env.example` | ⬜ |
-| 7 | Prometheus / Grafana provisioning 설정 작성 | `poc/monitoring/` | ⬜ |
-| 8 | 헬스체크 스크립트 작성 | `poc/docker/healthcheck.sh` | ⬜ |
-| 9 | `.gitignore` 작성 | `.gitignore` | ⬜ |
+| 1 | docker-compose.yml 작성 (NiFi, Kafka, ZooKeeper, Flink, PostgreSQL, **MongoDB**, Prometheus, Grafana) | `poc/docker/docker-compose.yml` | ✅ |
+| 2 | DB 초기화 스크립트 작성 (테이블, 인덱스, 초기 데이터) | `poc/init/init.sql` | ✅ |
+| 3 | MongoDB 초기화 스크립트 작성 (월별 컬렉션·인덱스, 샘플 도큐먼트) | `poc/init/init-mongo.js` | ✅ |
+| 4 | Kafka 토픽 초기화 스크립트 작성 (채널별 dispatch 토픽 포함 10개) | `poc/config/kafka-topics.sh` | ✅ |
+| 5 | Kafka Connector 설정 파일 작성 (JdbcSink, MongoSink) | `poc/config/kafka-connectors/` | ✅ |
+| 6 | 환경변수 설정 파일 작성 (`.env.example`) | `poc/docker/.env.example` | ✅ |
+| 7 | Prometheus / Grafana provisioning 설정 작성 | `poc/monitoring/` | ✅ |
+| 8 | 헬스체크 스크립트 작성 | `poc/docker/healthcheck.sh` | ✅ |
+| 9 | `.gitignore` 작성 | `.gitignore` | ✅ |
 
 **Day 2 완료 기준:**
 - [x] `docker compose up -d` 실행 시 전체 서비스 정상 기동
 - [x] PostgreSQL: `init.sql` 자동 적용 (`msg_send_history`, `msg_send_metrics`, `msg_batch_schedule`, `msg_dlq`, `ref_sender_code` 생성)
 - [x] **MongoDB: `send_histories_{YYYYMM}` 월별 컬렉션 + 인덱스 초기화**
-- [x] Kafka: 12개 토픽 생성 (채널별 dispatch 토픽 포함)
+- [x] Kafka: 10개 토픽 생성 (채널별 dispatch 토픽 포함)
 - [x] NiFi UI / Flink UI / Grafana UI 접근 가능 (`healthcheck.sh`로 검증)
 
 **작업 시 주의사항:**
@@ -112,15 +112,15 @@ am-platform/
 ### 2.1 구성 컨테이너 목록 (총 10개)
 | 컨테이너명 | 역할 및 목적 |
 |---|---|
-| `poc-nifi` | 발송 요청 접수, 트랜잭션 ID 발급 및 라우팅 |
-| `poc-kafka` | 대량 메시지 버퍼링 (topic.send.*) |
-| `poc-zookeeper` | Kafka 브로커 관리 및 메타데이터 동기화 |
-| `poc-jobmanager` | Flink 마스터 노드로 Job 배포 및 TaskManager 모니터링 관리 |
+| `am-nifi` | 발송 요청 접수, 트랜잭션 ID 발급 및 라우팅 |
+| `am-kafka` | 대량 메시지 버퍼링 (topic.send.*) |
+| `am-zookeeper` | Kafka 브로커 관리 및 메타데이터 동기화 |
+| `am-jobmanager` | Flink 마스터 노드로 Job 배포 및 TaskManager 모니터링 관리 |
 | `docker-taskmanager-1, 2` | Flink 워커 노드로 실질적인 메시지 검증, 포맷팅 및 채널 분배 연산 수행 |
-| `poc-postgres` | 발송 이력(msg_send_history) 및 통계 데이터 보관 RDBMS |
-| `poc-mongodb` | 월별 발송 이력 원본 JSON 보관 NoSQL |
-| `poc-prometheus` | 각 컨테이너로부터 실시간 메트릭 수집 |
-| `poc-grafana` | 식별된 메트릭 시각화 대시보드 |
+| `am-postgres` | 발송 이력(msg_send_history) 및 통계 데이터 보관 RDBMS |
+| `am-mongodb` | 월별 발송 이력 원본 JSON 보관 NoSQL |
+| `am-prometheus` | 각 컨테이너로부터 실시간 메트릭 수집 |
+| `am-grafana` | 식별된 메트릭 시각화 대시보드 |
 
 ---
 
@@ -315,4 +315,4 @@ am-platform/
 
 ---
 
-*최종 업데이트: 2026-03-24 | 다음 작업: Day 3 — Mock Adapter 개발 및 NiFi 플로우 구성*
+*최종 업데이트: 2026-03-25 | 다음 작업: Day 3 — Mock Adapter 개발 및 NiFi 플로우 구성*
