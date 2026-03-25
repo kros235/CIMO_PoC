@@ -1,0 +1,155 @@
+# poc/docker/docker-compose.adapters.yml
+# AM 플랫폼 Mock Adapter 5종 컨테이너 구성
+# 사용법: docker compose -f poc/docker/docker-compose.adapters.yml up -d --build
+#
+# 전제 조건: poc/docker/docker-compose.yml 로 인프라(Kafka 등)가 먼저 기동되어 있어야 한다.
+# 공유 네트워크 am-network 는 docker-compose.yml 에서 생성된 것을 사용한다.
+
+version: "3.8"
+
+services:
+
+  # ─────────────────────────────────────────
+  # SMS Mock Adapter (포트: 8101)
+  # ─────────────────────────────────────────
+  sms-adapter:
+    build:
+      context: ..
+      dockerfile: services/sms-adapter/Dockerfile
+    container_name: am-sms-adapter
+    ports:
+      - "8101:8101"
+    environment:
+      ADAPTER_PORT: "8101"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_DISPATCH_SMS: topic.send.dispatch.sms
+      KAFKA_TOPIC_RESULT: topic.send.result
+      KAFKA_TOPIC_RETRY: topic.send.retry
+      SMS_SUCCESS_RATE: "${SMS_SUCCESS_RATE:-0.95}"
+      SMS_DELAY_MS: "${SMS_DELAY_MS:-50}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    networks:
+      - am-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8101/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────
+  # MMS Mock Adapter (포트: 8102)
+  # ─────────────────────────────────────────
+  mms-adapter:
+    build:
+      context: ..
+      dockerfile: services/mms-adapter/Dockerfile
+    container_name: am-mms-adapter
+    ports:
+      - "8102:8102"
+    environment:
+      ADAPTER_PORT: "8102"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_DISPATCH_MMS: topic.send.dispatch.mms
+      KAFKA_TOPIC_RESULT: topic.send.result
+      KAFKA_TOPIC_RETRY: topic.send.retry
+      MMS_SUCCESS_RATE: "${MMS_SUCCESS_RATE:-0.93}"
+      MMS_DELAY_MS: "${MMS_DELAY_MS:-80}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    networks:
+      - am-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8102/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────
+  # RCS Mock Adapter (포트: 8103)
+  # ─────────────────────────────────────────
+  rcs-adapter:
+    build:
+      context: ..
+      dockerfile: services/rcs-adapter/Dockerfile
+    container_name: am-rcs-adapter
+    ports:
+      - "8103:8103"
+    environment:
+      ADAPTER_PORT: "8103"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_DISPATCH_RCS: topic.send.dispatch.rcs
+      KAFKA_TOPIC_RESULT: topic.send.result
+      KAFKA_TOPIC_RETRY: topic.send.retry
+      RCS_SUCCESS_RATE: "${RCS_SUCCESS_RATE:-0.90}"
+      RCS_DELAY_MS: "${RCS_DELAY_MS:-60}"
+      RCS_FALLBACK_RATE: "${RCS_FALLBACK_RATE:-0.07}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    networks:
+      - am-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8103/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────
+  # FAX Mock Adapter (포트: 8104)
+  # ─────────────────────────────────────────
+  fax-adapter:
+    build:
+      context: ..
+      dockerfile: services/fax-adapter/Dockerfile
+    container_name: am-fax-adapter
+    ports:
+      - "8104:8104"
+    environment:
+      ADAPTER_PORT: "8104"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_DISPATCH_FAX: topic.send.dispatch.fax
+      KAFKA_TOPIC_RESULT: topic.send.result
+      KAFKA_TOPIC_RETRY: topic.send.retry
+      FAX_SUCCESS_RATE: "${FAX_SUCCESS_RATE:-0.85}"
+      FAX_DELAY_MS: "${FAX_DELAY_MS:-200}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    networks:
+      - am-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8104/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────────────────────────────────
+  # Email Mock Adapter (포트: 8105)
+  # ─────────────────────────────────────────
+  email-adapter:
+    build:
+      context: ..
+      dockerfile: services/email-adapter/Dockerfile
+    container_name: am-email-adapter
+    ports:
+      - "8105:8105"
+    environment:
+      ADAPTER_PORT: "8105"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC_DISPATCH_EMAIL: topic.send.dispatch.email
+      KAFKA_TOPIC_RESULT: topic.send.result
+      KAFKA_TOPIC_RETRY: topic.send.retry
+      EMAIL_SUCCESS_RATE: "${EMAIL_SUCCESS_RATE:-0.98}"
+      EMAIL_DELAY_MS: "${EMAIL_DELAY_MS:-30}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    networks:
+      - am-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8105/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  am-network:
+    external: true   # docker-compose.yml 에서 생성된 네트워크 공유

@@ -1,10 +1,198 @@
-// poc/nifi/send-request-flow.json
-// NiFi 발송 요청 수집 플로우 템플릿
-// Import 방법: NiFi UI > 우클릭 > Upload Template > 이 파일 업로드 > Template 인스턴스화
-//
-// 플로우 구성:
-//   [ListenHTTP:8090] → [GenerateTxId] → [ValidateTxId] → [PublishKafka:topic.send.request]
-//                                                        ↘ [LogFailure] (txId 오류 건)
-//
-// 35자리 트랜잭션 ID 생성 규칙:
-//   메시지ID(13) + 발송방법코드(2) + 일자카운트(3) + 발송처코드(3) + 시퀀스(14) = 35자리
+{
+  "_comment": [
+    "AM 플랫폼 NiFi 발송 요청 수집 플로우 정의",
+    "NiFi 버전: 1.23.2 (HTTP 모드)",
+    "",
+    "[ NiFi UI 수동 구성 절차 ]",
+    "1. NiFi UI (http://localhost:8080/nifi) 접속",
+    "2. 빈 캔버스에 아래 Processor를 순서대로 추가",
+    "3. 각 Processor 설정값을 이 파일의 properties 기준으로 입력",
+    "4. Connection을 relationships 정의대로 연결",
+    "5. 전체 선택 후 Start 클릭",
+    "",
+    "[ 플로우 구성 ]",
+    "  [ListenHTTP:8090/am/send]",
+    "       ↓ success",
+    "  [EvaluateJsonPath] ← txId, channel, source 추출",
+    "       ↓ matched",
+    "  [RouteOnAttribute] ← txId 35자리 형식 검증",
+    "       ↓ valid          ↓ invalid",
+    "  [UpdateAttribute]  [LogMessage] ← 오류 로그 기록",
+    "  (추적 메타 부착)",
+    "       ↓",
+    "  [PublishKafka] → topic.send.request",
+    "",
+    "[ txId 검증 규칙 ]",
+    "  - 길이: 정확히 35자리",
+    "  - 구성: 숫자만 (0-9)",
+    "  - 발송방법코드(14~15번째 자리): 01~05 중 하나",
+    "  - 생성 주체: 상류 발송 시스템 (NiFi가 생성하지 않음)",
+    "  - NiFi 역할: 수신·검증·추적 시작만 담당"
+  ],
+  "flowVersion": "1.0",
+  "flowName": "AM 발송 요청 수집 플로우",
+  "nifiVersion": "1.23.2",
+  "processors": [
+    {
+      "id": "proc-listen-http",
+      "type": "org.apache.nifi.processors.standard.ListenHTTP",
+      "name": "발송 요청 HTTP 수신",
+      "description": "발송 시스템으로부터 HTTP POST 요청 수신. txId는 상류 시스템이 생성하여 body에 포함.",
+      "position": { "x": 400, "y": 100 },
+      "properties": {
+        "Listening Port": "8090",
+        "Base Path": "am/send",
+        "Max Buffer Size": "20 MB",
+        "Max Concurrent Tasks": "10",
+        "HTTP Context Map": ""
+      },
+      "schedulingStrategy": "TIMER_DRIVEN",
+      "schedulingPeriod": "0 sec",
+      "relationships": {
+        "success": "EvaluateJsonPath proc-eval-json"
+      }
+    },
+    {
+      "id": "proc-eval-json",
+      "type": "org.apache.nifi.processors.standard.EvaluateJsonPath",
+      "name": "txId·channel·source 추출",
+      "description": "수신된 JSON body에서 txId, channel, source를 FlowFile Attribute로 추출한다.",
+      "position": { "x": 400, "y": 250 },
+      "properties": {
+        "Destination": "flowfile-attribute",
+        "Return Type": "auto-detect",
+        "txId":    "$.txId",
+        "channel": "$.channel",
+        "source":  "$.source",
+        "sender":  "$.sender",
+        "receiver":"$.receiver"
+      },
+      "relationships": {
+        "matched":   "proc-validate-txid",
+        "unmatched": "proc-log-invalid"
+      }
+    },
+    {
+      "id": "proc-validate-txid",
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "name": "txId 35자리 형식 검증",
+      "description": "txId가 35자리 숫자이고 발송방법코드(01~05)를 포함하는지 검증한다. NiFi는 txId를 생성하지 않고 검증만 수행한다.",
+      "position": { "x": 400, "y": 400 },
+      "properties": {
+        "Routing Strategy": "Route to 'matched' if all match",
+        "txid_valid": "${txId:matches('[0-9]{13}(01|02|03|04|05)[0-9]{17}'):equals('true')}"
+      },
+      "note": "정규식 설명: [0-9]{13}=메시지ID 13자리 + (01~05)=발송방법코드 2자리 + [0-9]{17}=일자카운트3+발송처코드3+시퀀스14=20자리 → 총 35자리",
+      "relationships": {
+        "matched":   "proc-attach-meta",
+        "unmatched": "proc-log-invalid"
+      }
+    },
+    {
+      "id": "proc-attach-meta",
+      "type": "org.apache.nifi.processors.standard.UpdateAttribute",
+      "name": "추적 메타 부착",
+      "description": "txId 검증 통과 후 NiFi 추적에 필요한 메타 Attribute를 부착한다.",
+      "position": { "x": 400, "y": 550 },
+      "properties": {
+        "am.received.at":   "${now():format('yyyy-MM-dd\\'T\\'HH:mm:ss.SSSZ')}",
+        "am.nifi.node":     "${hostname()}",
+        "am.flow.step":     "REQUEST_RECEIVED",
+        "am.tx.id":         "${txId}",
+        "kafka.key":        "${txId}"
+      },
+      "relationships": {
+        "success": "proc-publish-kafka"
+      }
+    },
+    {
+      "id": "proc-publish-kafka",
+      "type": "org.apache.nifi.processors.kafka.pubsub.PublishKafka_2_6",
+      "name": "topic.send.request 발행",
+      "description": "검증된 발송 요청 메시지를 topic.send.request에 발행한다. txId를 Kafka 메시지 Key로 사용하여 동일 txId 메시지가 같은 파티션에 적재되도록 한다.",
+      "position": { "x": 400, "y": 700 },
+      "properties": {
+        "bootstrap.servers":    "kafka:9092",
+        "topic":                "topic.send.request",
+        "Message Key Field":    "${txId}",
+        "Delivery Guarantee":   "Guarantee Replicated Delivery",
+        "Request Max Bytes":    "1048576",
+        "Compression Type":     "snappy",
+        "acks":                 "all"
+      },
+      "relationships": {
+        "success": "proc-log-success",
+        "failure": "proc-log-invalid"
+      }
+    },
+    {
+      "id": "proc-log-success",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "발송 요청 수신 성공 로그",
+      "description": "txId 검증 통과 및 Kafka 발행 성공 이력을 기록한다.",
+      "position": { "x": 650, "y": 700 },
+      "properties": {
+        "Log Level":   "info",
+        "Log Message": "[AM] 발송 요청 수신 및 Kafka 발행 완료 | txId=${txId} | channel=${channel} | source=${source} | receiver=${receiver}"
+      },
+      "relationships": {
+        "success": "proc-log-success"
+      }
+    },
+    {
+      "id": "proc-log-invalid",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "txId 오류 거부 로그",
+      "description": "유효하지 않은 txId 수신 시 오류 로그를 기록하고 메시지를 폐기한다. 발송 거부 사유: txId 35자리 형식 불일치 또는 발송방법코드 범위 오류.",
+      "position": { "x": 700, "y": 400 },
+      "properties": {
+        "Log Level":   "error",
+        "Log Message": "[AM] 유효하지 않은 txId — 발송 요청 거부 | txId=${txId} | channel=${channel} | source=${source} | 사유: txId는 35자리 숫자이며 발송방법코드(01~05)를 포함해야 함"
+      },
+      "relationships": {
+        "success": "proc-log-invalid"
+      }
+    }
+  ],
+  "connections": [
+    { "id": "conn-1", "source": "proc-listen-http",  "sourceRelationship": "success",   "destination": "proc-eval-json" },
+    { "id": "conn-2", "source": "proc-eval-json",    "sourceRelationship": "matched",    "destination": "proc-validate-txid" },
+    { "id": "conn-3", "source": "proc-eval-json",    "sourceRelationship": "unmatched",  "destination": "proc-log-invalid" },
+    { "id": "conn-4", "source": "proc-validate-txid","sourceRelationship": "matched",    "destination": "proc-attach-meta" },
+    { "id": "conn-5", "source": "proc-validate-txid","sourceRelationship": "unmatched",  "destination": "proc-log-invalid" },
+    { "id": "conn-6", "source": "proc-attach-meta",  "sourceRelationship": "success",    "destination": "proc-publish-kafka" },
+    { "id": "conn-7", "source": "proc-publish-kafka","sourceRelationship": "success",    "destination": "proc-log-success" },
+    { "id": "conn-8", "source": "proc-publish-kafka","sourceRelationship": "failure",    "destination": "proc-log-invalid" }
+  ],
+  "ports": {
+    "http_input": {
+      "host": "0.0.0.0",
+      "port": 8090,
+      "path": "/am/send",
+      "method": "POST",
+      "contentType": "application/json"
+    }
+  },
+  "sampleRequest": {
+    "description": "발송 시스템이 NiFi로 전달하는 표준 요청 전문 예시. txId는 반드시 발송 시스템이 생성하여 포함해야 한다.",
+    "method": "POST",
+    "url": "http://localhost:8090/am/send",
+    "headers": { "Content-Type": "application/json" },
+    "body": {
+      "txId":        "12345678901230308400700000000000001",
+      "channel":     "SMS",
+      "priority":    1,
+      "sender":      "15881234",
+      "receiver":    "01012345678",
+      "body":        "고객님, 서비스 안내드립니다.",
+      "scheduledAt": null,
+      "requestedAt": "2026-03-26T10:00:00+09:00",
+      "source":      "CI",
+      "meta": {
+        "campaignId":  null,
+        "templateId":  "TPL0001",
+        "retryCount":  0
+      }
+    }
+  }
+}

@@ -1,3 +1,213 @@
-// poc/nifi/send-result-flow.json
-// NiFi 발송 결과 수신 플로우
-// topic.send.result 구독 → txId 35자리 검증 → 결과 로그 기록 → DB 저장 라우팅
+{
+  "_comment": [
+    "AM 플랫폼 NiFi 발송 결과 수신 플로우 정의",
+    "NiFi 버전: 1.23.2 (HTTP 모드)",
+    "",
+    "[ NiFi UI 수동 구성 절차 ]",
+    "1. NiFi UI (http://localhost:8080/nifi) 접속",
+    "2. 빈 캔버스에 아래 Processor를 순서대로 추가",
+    "3. 각 Processor 설정값을 이 파일의 properties 기준으로 입력",
+    "4. Connection을 relationships 정의대로 연결",
+    "5. 전체 선택 후 Start 클릭",
+    "",
+    "[ 플로우 구성 ]",
+    "  [ConsumeKafka] ← topic.send.result 구독",
+    "       ↓ success",
+    "  [EvaluateJsonPath] ← txId, status, resultCode 추출",
+    "       ↓ matched",
+    "  [RouteOnAttribute] ← txId 35자리 검증",
+    "       ↓ valid                  ↓ invalid",
+    "  [UpdateAttribute]         [LogMessage] ← txId 오류 로그",
+    "  (처리 메타 부착)",
+    "       ↓",
+    "  [RouteOnAttribute] ← 결과 코드 분기",
+    "     ↓ success(10000)  ↓ retry(5xxxx)  ↓ failed(4xxxx)",
+    "  [LogMessage]      [LogMessage]    [LogMessage]",
+    "  (성공 이력)       (재처리 이력)    (실패 이력)",
+    "",
+    "[ txId 기반 이력 연결 원칙 ]",
+    "  - 모든 결과 메시지는 txId를 통해 최초 발송 요청 이력과 연결",
+    "  - txId가 없거나 형식 오류인 결과는 별도 오류 로그로 기록"
+  ],
+  "flowVersion": "1.0",
+  "flowName": "AM 발송 결과 수신 플로우",
+  "nifiVersion": "1.23.2",
+  "processors": [
+    {
+      "id": "proc-consume-kafka",
+      "type": "org.apache.nifi.processors.kafka.pubsub.ConsumeKafka_2_6",
+      "name": "topic.send.result 구독",
+      "description": "Kafka topic.send.result 토픽에서 발송 결과 메시지를 구독한다.",
+      "position": { "x": 400, "y": 100 },
+      "properties": {
+        "bootstrap.servers":    "kafka:9092",
+        "topic(s)":             "topic.send.result",
+        "Group ID":             "am-nifi-result-consumer",
+        "Offset Reset":         "latest",
+        "Max Poll Records":     "500",
+        "Communications Timeout": "60 secs"
+      },
+      "relationships": {
+        "success": "proc-eval-result-json"
+      }
+    },
+    {
+      "id": "proc-eval-result-json",
+      "type": "org.apache.nifi.processors.standard.EvaluateJsonPath",
+      "name": "결과 필드 추출",
+      "description": "결과 JSON에서 txId, status, resultCode, channel, receiver를 FlowFile Attribute로 추출한다.",
+      "position": { "x": 400, "y": 250 },
+      "properties": {
+        "Destination":   "flowfile-attribute",
+        "Return Type":   "auto-detect",
+        "txId":          "$.txId",
+        "status":        "$.status",
+        "resultCode":    "$.resultCode",
+        "channel":       "$.channel",
+        "receiver":      "$.receiver",
+        "elapsedMs":     "$.elapsedMs",
+        "errorDetail":   "$.errorDetail"
+      },
+      "relationships": {
+        "matched":   "proc-validate-result-txid",
+        "unmatched": "proc-log-result-error"
+      }
+    },
+    {
+      "id": "proc-validate-result-txid",
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "name": "결과 txId 35자리 검증",
+      "description": "수신된 결과의 txId가 35자리 숫자 형식인지 검증한다. 유효하지 않으면 오류 로그로 라우팅.",
+      "position": { "x": 400, "y": 400 },
+      "properties": {
+        "Routing Strategy": "Route to 'matched' if all match",
+        "txid_valid": "${txId:matches('[0-9]{13}(01|02|03|04|05)[0-9]{17}'):equals('true')}"
+      },
+      "relationships": {
+        "matched":   "proc-attach-result-meta",
+        "unmatched": "proc-log-result-error"
+      }
+    },
+    {
+      "id": "proc-attach-result-meta",
+      "type": "org.apache.nifi.processors.standard.UpdateAttribute",
+      "name": "결과 추적 메타 부착",
+      "description": "결과 처리 시각, 노드 정보 등 추적 메타를 부착한다.",
+      "position": { "x": 400, "y": 550 },
+      "properties": {
+        "am.result.processed.at": "${now():format('yyyy-MM-dd\\'T\\'HH:mm:ss.SSSZ')}",
+        "am.nifi.node":           "${hostname()}",
+        "am.flow.step":           "RESULT_RECEIVED",
+        "am.tx.id":               "${txId}"
+      },
+      "relationships": {
+        "success": "proc-route-by-result"
+      }
+    },
+    {
+      "id": "proc-route-by-result",
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "name": "결과 코드 분기",
+      "description": "resultCode에 따라 성공(10000), 재처리(5xxxx), 실패(4xxxx)로 분기한다.",
+      "position": { "x": 400, "y": 700 },
+      "properties": {
+        "Routing Strategy": "Route to the first matching relationship",
+        "result_success": "${resultCode:equals('10000')}",
+        "result_retry":   "${resultCode:startsWith('5')}",
+        "result_failed":  "${resultCode:startsWith('4')}"
+      },
+      "relationships": {
+        "result_success": "proc-log-success",
+        "result_retry":   "proc-log-retry",
+        "result_failed":  "proc-log-failed",
+        "unmatched":      "proc-log-result-error"
+      }
+    },
+    {
+      "id": "proc-log-success",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "발송 성공 이력 로그",
+      "description": "발송 성공(resultCode=10000) 이력을 INFO 레벨로 기록한다.",
+      "position": { "x": 100, "y": 850 },
+      "properties": {
+        "Log Level":   "info",
+        "Log Message": "[AM][SUCCESS] 발송 완료 | txId=${txId} | channel=${channel} | receiver=${receiver} | elapsed=${elapsedMs}ms"
+      },
+      "relationships": {
+        "success": "proc-log-success"
+      }
+    },
+    {
+      "id": "proc-log-retry",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "재처리 대상 이력 로그",
+      "description": "재처리 대상(resultCode=5xxxx) 이력을 WARN 레벨로 기록한다. 실제 retry 처리는 Flink RetryJob이 담당한다.",
+      "position": { "x": 400, "y": 850 },
+      "properties": {
+        "Log Level":   "warn",
+        "Log Message": "[AM][RETRY] 재처리 대상 | txId=${txId} | channel=${channel} | resultCode=${resultCode} | errorDetail=${errorDetail}"
+      },
+      "relationships": {
+        "success": "proc-log-retry"
+      }
+    },
+    {
+      "id": "proc-log-failed",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "발송 실패 이력 로그",
+      "description": "영구 실패(resultCode=4xxxx) 이력을 ERROR 레벨로 기록한다. DLQ 이동은 Flink RetryJob이 담당.",
+      "position": { "x": 700, "y": 850 },
+      "properties": {
+        "Log Level":   "error",
+        "Log Message": "[AM][FAILED] 발송 실패 | txId=${txId} | channel=${channel} | resultCode=${resultCode} | errorDetail=${errorDetail} | receiver=${receiver}"
+      },
+      "relationships": {
+        "success": "proc-log-failed"
+      }
+    },
+    {
+      "id": "proc-log-result-error",
+      "type": "org.apache.nifi.processors.standard.LogMessage",
+      "name": "결과 처리 오류 로그",
+      "description": "txId 형식 오류 또는 결과 파싱 실패 시 ERROR 로그 기록.",
+      "position": { "x": 700, "y": 400 },
+      "properties": {
+        "Log Level":   "error",
+        "Log Message": "[AM][ERROR] 결과 처리 오류 — txId 검증 실패 또는 파싱 불가 | txId=${txId} | status=${status} | resultCode=${resultCode}"
+      },
+      "relationships": {
+        "success": "proc-log-result-error"
+      }
+    }
+  ],
+  "connections": [
+    { "id": "conn-r1", "source": "proc-consume-kafka",       "sourceRelationship": "success",        "destination": "proc-eval-result-json" },
+    { "id": "conn-r2", "source": "proc-eval-result-json",    "sourceRelationship": "matched",        "destination": "proc-validate-result-txid" },
+    { "id": "conn-r3", "source": "proc-eval-result-json",    "sourceRelationship": "unmatched",      "destination": "proc-log-result-error" },
+    { "id": "conn-r4", "source": "proc-validate-result-txid","sourceRelationship": "matched",        "destination": "proc-attach-result-meta" },
+    { "id": "conn-r5", "source": "proc-validate-result-txid","sourceRelationship": "unmatched",      "destination": "proc-log-result-error" },
+    { "id": "conn-r6", "source": "proc-attach-result-meta",  "sourceRelationship": "success",        "destination": "proc-route-by-result" },
+    { "id": "conn-r7", "source": "proc-route-by-result",     "sourceRelationship": "result_success", "destination": "proc-log-success" },
+    { "id": "conn-r8", "source": "proc-route-by-result",     "sourceRelationship": "result_retry",   "destination": "proc-log-retry" },
+    { "id": "conn-r9", "source": "proc-route-by-result",     "sourceRelationship": "result_failed",  "destination": "proc-log-failed" },
+    { "id": "conn-r10","source": "proc-route-by-result",     "sourceRelationship": "unmatched",      "destination": "proc-log-result-error" }
+  ],
+  "sampleResultMessage": {
+    "description": "Adapter가 topic.send.result에 발행하는 표준 결과 메시지 예시",
+    "body": {
+      "txId":          "12345678901230308400700000000000001",
+      "channel":       "SMS",
+      "receiver":      "01012345678",
+      "sender":        "15881234",
+      "status":        "DELIVERED",
+      "resultCode":    "10000",
+      "errorDetail":   null,
+      "retryCount":    0,
+      "source":        "CI",
+      "dispatchedAt":  "2026-03-26T10:00:00.450+09:00",
+      "deliveredAt":   "2026-03-26T10:00:01.210+09:00",
+      "elapsedMs":     760,
+      "adapterVersion":"1.0.0"
+    }
+  }
+}

@@ -4,7 +4,7 @@
 -- 1. 발송 이력 메인 테이블 (msg_send_history)
 CREATE TABLE IF NOT EXISTS msg_send_history (
     id BIGSERIAL PRIMARY KEY,
-    tx_id UUID NOT NULL,
+    tx_id CHAR(35) NOT NULL,
     request_id VARCHAR(100),
     channel VARCHAR(20) NOT NULL,
     sender VARCHAR(50) NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS msg_batch_schedule (
 -- 4. DLQ 테이블 (msg_dlq - 최종 실패건 저장)
 CREATE TABLE IF NOT EXISTS msg_dlq (
     id BIGSERIAL PRIMARY KEY,
-    tx_id UUID NOT NULL,
+    tx_id CHAR(35) NOT NULL,
     channel VARCHAR(20),
     error_reason TEXT,
     payload JSONB,
