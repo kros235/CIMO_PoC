@@ -148,13 +148,13 @@ am-platform/
 | 4 | RCS Mock Adapter 구현 (성공률 90%, fallback→SMS 결과코드 50002) | `poc/services/rcs-adapter/` | ✅ |
 | 5 | FAX Mock Adapter 구현 (성공률 85%, 지연 200ms, FAX 전용 오류코드) | `poc/services/fax-adapter/` | ✅ |
 | 6 | Email Mock Adapter 구현 (성공률 98%, 지연 30ms, 바운스/스팸 시뮬레이션) | `poc/services/email-adapter/` | ✅ |
-| 7 | NiFi 발송 요청 수집 플로우 템플릿 작성 (HTTP 수신 → 35자리 txId 생성 → Kafka 발행) | `poc/nifi/send-request-flow.json` | ✅ |
+| 7 | NiFi 발송 요청 수집 플로우 템플릿 작성 (HTTP 수신 → 상류 발송 시스템이 생성한 35자리 txId 검증 → Kafka 발행) | `poc/nifi/send-request-flow.json` | ✅ |
 | 8 | NiFi 결과 수신 플로우 템플릿 작성 (Kafka 구독 → txId 35자리 검증 → DB 업데이트) | `poc/nifi/send-result-flow.json` | ✅ |
 
 **Day 3 완료 기준:**
 - [x] 각 Adapter: `GET /health` → 200 OK
 - [x] 각 Adapter: Kafka `topic.send.dispatch.{channel}` 구독 및 결과를 `topic.send.result`에 발행
-- [x] NiFi: HTTP POST 요청 수신 → 35자리 txId 생성 → `topic.send.request` 발행 동작 확인
+- [x] NiFi: HTTP POST 요청 수신 → 상류 발송 시스템이 포함한 35자리 txId 형식 검증(01~05 방법코드 포함 여부) → `topic.send.request` 발행 동작 확인
 - [x] txId 35자리 생성·검증·파싱 단독 테스트 `[PASS]` 확인
 
 **Day 3 확정 결과코드 체계:**
