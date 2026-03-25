@@ -9,7 +9,9 @@ poc/docker/.env
 # Dependencies
 node_modules/
 venv/
+.venv/          
 __pycache__/
+*.pyc           
 
 # Data Volumes (Docker relative paths)
 poc/docker/kafka/data/
@@ -29,3 +31,8 @@ tmp/
 # OS
 .DS_Store
 Thumbs.db
+
+# ⭐ 추가
+# Python 인스톨러 / 바이너리
+*.exe
+*.msi
