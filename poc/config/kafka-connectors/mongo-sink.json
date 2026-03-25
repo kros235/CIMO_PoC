@@ -1,0 +1,16 @@
+{
+    "name": "mongo-sink-connector",
+    "config": {
+        "connector.class": "com.mongodb.kafka.connect.MongoSinkConnector",
+        "tasks.max": "1",
+        "topics": "topic.send.result",
+        "connection.uri": "mongodb://admin:admin_password@mongodb:27017/?authSource=admin",
+        "database": "am_db",
+        "collection": "send_histories_202603",
+        "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "key.converter.schemas.enable": "false",
+        "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+        "value.converter.schemas.enable": "false",
+        "document.id.strategy": "com.mongodb.kafka.connect.sink.processor.id.strategy.BsonOidStrategy"
+    }
+}

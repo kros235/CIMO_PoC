@@ -1,0 +1,31 @@
+# IDE
+.idea/
+.vscode/
+
+# Environment Variables
+.env
+poc/docker/.env
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+
+# Data Volumes (Docker relative paths)
+poc/docker/kafka/data/
+poc/docker/postgres/data/
+poc/docker/mongodb/data/
+poc/docker/prom_data/
+poc/nifi/state/
+
+# Logs
+logs/
+*.log
+
+# Temp
+.tmp/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db

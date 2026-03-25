@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # 1. ZooKeeper (Required for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: poc-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - am-network
+
+  # 2. Kafka Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: poc-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    volumes:
+      - ./kafka/data:/var/lib/kafka/data
+    networks:
+      - am-network
+
+  # 3. PostgreSQL (이력 DB)
+  postgres:
+    image: postgres:15-alpine
+    container_name: poc-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-am_db}
+      POSTGRES_USER: ${POSTGRES_USER:-am_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-am_password}
+    volumes:
+      - ../init/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/data:/var/lib/postgresql/data
+    networks:
+      - am-network
+
+  # 4. MongoDB (월별 이력 적재)
+  mongodb:
+    image: mongo:6.0
+    container_name: poc-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-admin_password}
+    volumes:
+      - ../init/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+      - ./mongodb/data:/data/db
+    networks:
+      - am-network
+
+  # 5. Apache NiFi
+  nifi:
+    image: apache/nifi:2.0.0
+    container_name: poc-nifi
+    ports:
+      - "8080:8080"
+    environment:
+      - SINGLE_USER_CREDENTIALS_USERNAME=${NIFI_ADMIN_USER:-nifiadmin}
+      - SINGLE_USER_CREDENTIALS_PASSWORD=${NIFI_ADMIN_PASS:-nifipassword123!}
+      - NIFI_WEB_HTTP_PORT=8080
+    volumes:
+      - ../nifi/state:/opt/nifi/nifi-current/state
+    networks:
+      - am-network
+
+  # 6. Flink JobManager
+  jobmanager:
+    image: flink:1.18.1-scala_2.12
+    container_name: poc-jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+    networks:
+      - am-network
+
+  # 7. Flink TaskManager
+  taskmanager:
+    image: flink:1.18.1-scala_2.12
+    depends_on:
+      - jobmanager
+    command: taskmanager
+    scale: 2
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2
+    networks:
+      - am-network
+
+  # 8. Prometheus
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: poc-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - am-network
+
+  # 9. Grafana
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: poc-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASS:-admin}
+    volumes:
+      - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - am-network
+
+networks:
+  am-network:
+    driver: bridge

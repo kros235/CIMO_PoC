@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: "kafka"
+    static_configs:
+      - targets: ["kafka:1234"] # JMX Exporter endpoint if implemented
+
+  - job_name: "flink"
+    static_configs:
+      - targets: ["jobmanager:9249", "taskmanager:9249"] 
+        
+  - job_name: "adapters"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: 
+        - "sms-adapter:8101"
+        - "mms-adapter:8102"
+        - "rcs-adapter:8103"
+        - "fax-adapter:8104"
+        - "email-adapter:8105"
