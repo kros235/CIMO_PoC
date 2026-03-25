@@ -5,8 +5,8 @@ echo "Checking AM Platform POC Services Health..."
 echo "----------------------------------------"
 
 # 1. NiFi
-status_code=$(curl --write-out %{http_code} --silent --output /dev/null http://localhost:8080/nifi)
-if [[ "$status_code" -ne 0 ]]; then
+http_code=$(curl --write-out "%{http_code}" ...)
+if [[ "$http_code" -eq 200 ]]; then   # ← "200일 때만 성공"으로 정상화
   echo "✅ NiFi UI (Port 8080) is reachable ($status_code)"
 else
   echo "❌ NiFi UI (Port 8080) is NOT reachable"
@@ -29,21 +29,23 @@ else
 fi
 
 # 4. PostgreSQL
-if nc -z localhost 5432; then
+if docker exec am-postgres pg_isready -U am_user -d am_db -q 2>/dev/null; then
   echo "✅ PostgreSQL (Port 5432) is accepting connections"
 else
   echo "❌ PostgreSQL (Port 5432) is NOT accepting connections"
 fi
 
 # 5. MongoDB
-if nc -z localhost 27017; then
+if docker exec am-mongodb mongosh --quiet --eval \
+  "db.adminCommand('ping').ok" 2>/dev/null | grep -q "^1$"; then
   echo "✅ MongoDB (Port 27017) is accepting connections"
 else
   echo "❌ MongoDB (Port 27017) is NOT accepting connections"
 fi
 
 # 6. Kafka Broker
-if nc -z localhost 9092; then
+if docker exec am-kafka kafka-broker-api-versions \
+  --bootstrap-server localhost:9092 &>/dev/null; then
   echo "✅ Kafka Broker (Port 9092) is accepting connections"
 else
   echo "❌ Kafka Broker (Port 9092) is NOT accepting connections"

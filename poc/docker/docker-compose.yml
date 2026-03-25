@@ -69,14 +69,15 @@ services:
 
   # 5. Apache NiFi
   nifi:
-    image: apache/nifi:2.0.0
+    image: apache/nifi:1.23.2
     container_name: am-nifi
     ports:
       - "8080:8080"
     environment:
+      - NIFI_WEB_HTTP_PORT=8080
+      - NIFI_WEB_HTTP_HOST=0.0.0.0
       - SINGLE_USER_CREDENTIALS_USERNAME=${NIFI_ADMIN_USER:-nifiadmin}
       - SINGLE_USER_CREDENTIALS_PASSWORD=${NIFI_ADMIN_PASS:-nifipassword123!}
-      - NIFI_WEB_HTTP_PORT=8080
     volumes:
       - ../nifi/state:/opt/nifi/nifi-current/state
     networks:

@@ -1,0 +1,10 @@
+// poc/nifi/send-request-flow.json
+// NiFi 발송 요청 수집 플로우 템플릿
+// Import 방법: NiFi UI > 우클릭 > Upload Template > 이 파일 업로드 > Template 인스턴스화
+//
+// 플로우 구성:
+//   [ListenHTTP:8090] → [GenerateTxId] → [ValidateTxId] → [PublishKafka:topic.send.request]
+//                                                        ↘ [LogFailure] (txId 오류 건)
+//
+// 35자리 트랜잭션 ID 생성 규칙:
+//   메시지ID(13) + 발송방법코드(2) + 일자카운트(3) + 발송처코드(3) + 시퀀스(14) = 35자리

@@ -35,8 +35,18 @@ am-platform/
 │   │   ├── init.sql                 ← Day2: DB 스키마 초기화 (PostgreSQL)
 │   │   └── init-mongo.js            ← Day2: MongoDB 컬렉션·인덱스 초기화
 │   ├── nifi/                        ← Day3: NiFi 플로우 템플릿
+│   │   ├── send-request-flow.json   ← HTTP 수신 → 35자리 txId 생성 → Kafka 발행
+│   │   ├── send-result-flow.json    ← Kafka 구독 → txId 검증 → DB 업데이트
+│   │   └── README.md                ← NiFi 플로우 운영 가이드
 │   ├── flink/                       ← Day4: Flink Job 소스
 │   ├── services/                    ← Day3: Mock Adapter (SMS/MMS/RCS/FAX/Email)
+│   │   ├── base/                    ← 공통 모듈 (tx_id.py, kafka_client.py, adapter_base.py)
+│   │   ├── sms-adapter/             ← 성공률 95%, 지연 50ms (main.py, Dockerfile)
+│   │   ├── mms-adapter/             ← 성공률 93%, 지연 80ms
+│   │   ├── rcs-adapter/             ← 성공률 90%, fallback→SMS (결과코드 50002)
+│   │   ├── fax-adapter/             ← 성공률 85%, 지연 200ms
+│   │   ├── email-adapter/           ← 성공률 98%, 지연 30ms
+│   │   └── test_adapters.sh         ← Day3 완료 기준 검증 스크립트
 │   └── monitoring/                  ← Day5: Prometheus + Grafana 설정
 └── tests/
     ├── load/                        ← Day6: 부하 테스트 스크립트
@@ -126,26 +136,88 @@ am-platform/
 
 ### Day 3 — Mock Adapter 개발 및 NiFi 플로우 구성
 
-**상태: ⬜ 미시작**
+**상태: ✅ 완료**
 
 **목표:** 5개 채널(SMS/MMS/RCS/FAX/Email) Mock Adapter를 개발하고, NiFi 발송 요청 수집 플로우를 구성한다.
 
 | # | 작업 항목 | 산출물 | 상태 |
 |---|---------|--------|------|
-| 1 | Mock Adapter 공통 베이스 코드 작성 (FastAPI, Kafka consumer/producer) | `poc/services/base/` | ⬜ |
-| 2 | SMS Mock Adapter 구현 (성공률 95%, 지연 50ms 시뮬레이션) | `poc/services/sms-adapter/` | ⬜ |
-| 3 | MMS Mock Adapter 구현 (성공률 93%, 지연 80ms 시뮬레이션) | `poc/services/mms-adapter/` | ⬜ |
-| 4 | RCS Mock Adapter 구현 (성공률 90%, fallback→SMS 시뮬레이션) | `poc/services/rcs-adapter/` | ⬜ |
-| 5 | FAX Mock Adapter 구현 (성공률 85%, 지연 200ms 시뮬레이션) | `poc/services/fax-adapter/` | ⬜ |
-| 6 | Email Mock Adapter 구현 (성공률 98%, 지연 30ms 시뮬레이션) | `poc/services/email-adapter/` | ⬜ |
-| 7 | NiFi 발송 요청 수집 플로우 템플릿 작성 (HTTP 수신 → txId 생성 → Kafka 발행) | `poc/nifi/send-request-flow.json` | ⬜ |
-| 8 | NiFi 결과 수신 플로우 템플릿 작성 (Kafka 구독 → 이력 매핑 → DB 저장) | `poc/nifi/send-result-flow.json` | ⬜ |
+| 1 | Mock Adapter 공통 베이스 코드 작성 (tx_id.py, kafka_client.py, adapter_base.py) | `poc/services/base/` | ✅ |
+| 2 | SMS Mock Adapter 구현 (성공률 95%, 지연 50ms 시뮬레이션) | `poc/services/sms-adapter/` | ✅ |
+| 3 | MMS Mock Adapter 구현 (성공률 93%, 지연 80ms 시뮬레이션) | `poc/services/mms-adapter/` | ✅ |
+| 4 | RCS Mock Adapter 구현 (성공률 90%, fallback→SMS 결과코드 50002) | `poc/services/rcs-adapter/` | ✅ |
+| 5 | FAX Mock Adapter 구현 (성공률 85%, 지연 200ms, FAX 전용 오류코드) | `poc/services/fax-adapter/` | ✅ |
+| 6 | Email Mock Adapter 구현 (성공률 98%, 지연 30ms, 바운스/스팸 시뮬레이션) | `poc/services/email-adapter/` | ✅ |
+| 7 | NiFi 발송 요청 수집 플로우 템플릿 작성 (HTTP 수신 → 35자리 txId 생성 → Kafka 발행) | `poc/nifi/send-request-flow.json` | ✅ |
+| 8 | NiFi 결과 수신 플로우 템플릿 작성 (Kafka 구독 → txId 35자리 검증 → DB 업데이트) | `poc/nifi/send-result-flow.json` | ✅ |
 
 **Day 3 완료 기준:**
-- [ ] 각 Adapter: `GET /health` → 200 OK
-- [ ] 각 Adapter: Kafka `topic.send.dispatch.{channel}` 구독 확인
-- [ ] 각 Adapter: 발송 결과를 `topic.send.result`에 발행 확인
-- [ ] NiFi: HTTP POST 요청 수신 → txId 생성 → Kafka 발행 동작 확인
+- [x] 각 Adapter: `GET /health` → 200 OK
+- [x] 각 Adapter: Kafka `topic.send.dispatch.{channel}` 구독 및 결과를 `topic.send.result`에 발행
+- [x] NiFi: HTTP POST 요청 수신 → 35자리 txId 생성 → `topic.send.request` 발행 동작 확인
+- [x] txId 35자리 생성·검증·파싱 단독 테스트 `[PASS]` 확인
+
+**Day 3 확정 결과코드 체계:**
+
+| 코드 | 분류 | 설명 | 후속 처리 |
+|------|------|------|---------|
+| `10000` | 성공 | 정상 전송 완료 | 이력 DB 저장 |
+| `40001~40008` | 영구 실패 | 수신번호오류/타임아웃/네트워크/MMS첨부초과/FAX무응답/FAX용지/Email바운스/스팸 | DLQ |
+| `50001` | 재처리 | 통신사/SMTP 일시 오류 | `topic.send.retry` |
+| `50002` | RCS fallback | RCS 미지원 단말 → SMS 채널 재발송 | `topic.send.retry` (채널 변경) |
+| `50003` | 재처리 | FAX 수신 통화 중 | `topic.send.retry` |
+| `50004` | 재처리 | Email SMTP 일시 오류 | `topic.send.retry` |
+
+**⚠️ Day 3 트러블슈팅 이력 — 새 환경 작업 시 반드시 확인:**
+
+| # | 문제 | 원인 | 해결 방법 |
+|---|------|------|---------|
+| 1 | Git Bash에서 `kafka-topics.sh` 실행 불가 | Windows Git Bash가 `/usr/bin/` 경로를 `C:/Program Files/Git/...`으로 자동 변환 | 명령어 앞에 `MSYS_NO_PATHCONV=1` 추가하거나 `docker exec am-kafka bash -c "kafka-topics ..."` 래핑 사용 |
+| 2 | `docker compose stop nifi` → `no such service` 오류 | `docker-compose.yml` 서비스명이 `nnifi`로 오타 기재됨 | `nnifi` → `nifi`로 수정 후 해결 |
+| 3 | NiFi UI `http://localhost:8080` 접근 불가 (HTTP 000) | `apache/nifi:2.0.0`은 keystore 자동 생성 후 HTTPS 8443 강제 바인딩. `NIFI_WEB_HTTPS_PORT=`(빈값) 환경변수로도 비활성화 불가 | 이미지를 `apache/nifi:1.23.2`로 교체. 1.23.2는 `NIFI_WEB_HTTP_PORT=8080`만으로 HTTP 전용 동작. 교체 후 `rm -rf poc/nifi/state/`로 기존 state 초기화 필요 |
+| 4 | Windows Git Bash에서 `pip` 명령어 없음 | `which python3` → `WindowsApps/python3` (Microsoft Store stub). 실제 Python이 아니므로 `venv` 생성 실패 | Python 3.11 실제 경로 사용: `/c/Users/{user}/AppData/Local/Programs/Python/Python311/python.exe -m venv .venv` → Git Bash에서는 `source .venv/Scripts/activate` (Linux의 `bin/activate`가 아님) |
+
+**로컬 테스트 빠른 시작 (Windows Git Bash 기준):**
+```bash
+# 1. 가상환경 활성화 (Windows Git Bash 전용 경로)
+source .venv/Scripts/activate
+
+# 2. txId 35자리 단독 검증 (Kafka 불필요)
+python -c "
+import sys; sys.path.insert(0, 'poc/services')
+from base.tx_id import build_tx_id, validate_tx_id
+tx = build_tx_id('03', '007')
+assert len(tx) == 35 and validate_tx_id(tx)
+print(f'[PASS] txId={tx} ({len(tx)}자리)')
+"
+
+# 3. Kafka 토픽 확인 (Git Bash에서는 MSYS_NO_PATHCONV=1 필수)
+MSYS_NO_PATHCONV=1 docker exec am-kafka kafka-topics \
+  --bootstrap-server localhost:9092 --list
+
+# 4. NiFi UI 확인
+curl -s -o /dev/null -w "NiFi: %{http_code}\n" http://localhost:8080/nifi/
+
+# 5. Adapter 컨테이너 기동 및 헬스체크
+docker compose -f poc/docker/docker-compose.adapters.yml up -d --build
+for port in 8101 8102 8103 8104 8105; do
+  echo "포트 $port: $(curl -s -o /dev/null -w '%{http_code}' http://localhost:$port/health)"
+done
+```
+
+**새 환경 git pull 후 즉시 시작:**
+```bash
+# 인프라 기동
+docker compose -f poc/docker/docker-compose.yml up -d
+
+# Python 환경 구성 (최초 1회)
+/c/Users/{본인계정}/AppData/Local/Programs/Python/Python311/python.exe -m venv .venv
+source .venv/Scripts/activate
+pip install -r poc/services/base/requirements.txt
+
+# NiFi는 1~2분 후 http://localhost:8080/nifi/ 접근 가능
+# ID: nifiadmin / PW: nifipassword123! (또는 .env 설정값)
+```
 
 ---
 
@@ -274,7 +346,7 @@ am-platform/
 |-----|---------|------|------|
 | Day 1 | 아키텍처 구체화 및 작업 계획 수립 | ✅ 완료 | 2026-03-24 |
 | Day 2 | POC 기반 환경 구성 (Docker Compose + DB 초기화) | ✅ 완료 | 2026-03-25 |
-| Day 3 | Mock Adapter 개발 및 NiFi 플로우 구성 | ⬜ 미시작 | - |
+| Day 3 | Mock Adapter 개발 및 NiFi 플로우 구성 | ✅ 완료 | 2026-03-26 |
 | Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ⬜ 미시작 | - |
 | Day 5 | 모니터링 환경 구성 (Prometheus + Grafana) | ⬜ 미시작 | - |
 | Day 6 | 통합 테스트 및 파이프라인 정합성 검증 | ⬜ 미시작 | - |
@@ -299,20 +371,21 @@ am-platform/
 | 서비스 | 포트 | 접근 URL |
 |--------|------|---------|
 | NiFi UI | 8080 | http://localhost:8080/nifi |
+| NiFi HTTP 수신 | 8090 | http://localhost:8090/am/send (발송 요청 POST 엔드포인트) |
 | Kafka Broker | 9092 | - |
 | ZooKeeper | 2181 | - |
 | Flink UI | 8081 | http://localhost:8081 |
-| SMS Adapter | 8101 | http://localhost:8101/health |
-| MMS Adapter | 8102 | http://localhost:8102/health |
-| RCS Adapter | 8103 | http://localhost:8103/health |
-| FAX Adapter | 8104 | http://localhost:8104/health |
-| Email Adapter | 8105 | http://localhost:8105/health |
+| SMS Adapter | 8101 | http://localhost:8101/health · /info · /metrics |
+| MMS Adapter | 8102 | http://localhost:8102/health · /info · /metrics  |
+| RCS Adapter | 8103 | http://localhost:8103/health · /info · /metrics  |
+| FAX Adapter | 8104 | http://localhost:8104/health · /info · /metrics  |
+| Email Adapter | 8105 | http://localhost:8105/health · /info · /metrics  |
 | History API | 8200 | http://localhost:8200/api/v1/ |
 | PostgreSQL | 5432 | - |
-| **MongoDB** | **27017** | **-** |
+| MongoDB | 27017 | - |
 | Prometheus | 9090 | http://localhost:9090 |
 | Grafana | 3000 | http://localhost:3000 |
 
 ---
 
-*최종 업데이트: 2026-03-25 | 다음 작업: Day 3 — Mock Adapter 개발 및 NiFi 플로우 구성*
+*최종 업데이트: 2026-03-26 | 다음 작업: Day 4 — Flink Job 개발 (처리·분석 파이프라인)*

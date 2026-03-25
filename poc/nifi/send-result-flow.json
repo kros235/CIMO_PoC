@@ -1,0 +1,3 @@
+// poc/nifi/send-result-flow.json
+// NiFi 발송 결과 수신 플로우
+// topic.send.result 구독 → txId 35자리 검증 → 결과 로그 기록 → DB 저장 라우팅
