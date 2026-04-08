@@ -36,3 +36,7 @@ Thumbs.db
 # Python 인스톨러 / 바이너리
 *.exe
 *.msi
+# Flink build artifacts
+poc/flink/target/
+poc/flink/am-flink-fat.jar
+poc/flink/dependency-reduced-pom.xml

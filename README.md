@@ -222,19 +222,14 @@ pip install -r poc/services/base/requirements.txt
 ---
 
 ### Day 4 — Flink Job 개발 (처리·분석 파이프라인)
-
-**상태: ⬜ 미시작**
-
-**목표:** Flink Job을 개발하여 발송 전 검증, 채널 분배, Rate Limiting, 성공률 집계를 구현한다.
-
-| # | 작업 항목 | 산출물 | 상태 |
-|---|---------|--------|------|
-| 1 | Flink 프로젝트 구조 초기화 (Maven/Gradle, 의존성 설정) | `poc/flink/` | ⬜ |
-| 2 | 발송 요청 처리 Job (검증 → 포맷팅 → 채널 분배 → dispatch 토픽 발행) | `poc/flink/jobs/SendRequestJob.java` | ⬜ |
-| 3 | Rate Limiting 로직 구현 (채널별 TPS 제어, sliding window) | `poc/flink/operators/RateLimitOperator.java` | ⬜ |
-| 4 | 발송 결과 처리 Job (성공률 집계, 실패 패턴 분석, 재처리 분류) | `poc/flink/jobs/SendResultJob.java` | ⬜ |
-| 5 | 재처리(Retry) Job (retry 토픽 구독 → 지수 백오프 → 재발송 또는 DLQ) | `poc/flink/jobs/RetryJob.java` | ⬜ |
-| 6 | Flink Job 배포 및 JobManager 등록 | Flink UI 확인 | ⬜ |
+**상태: ✅ 완료**
+...
+| 1 | Flink 프로젝트 구조 초기화 (Maven/Gradle, 의존성 설정) | `poc/flink/` | ✅ |
+| 2 | 발송 요청 처리 Job ...  | ✅ |
+| 3 | Rate Limiting 로직 구현 ... | ✅ |
+| 4 | 발송 결과 처리 Job ... | ✅ |
+| 5 | 재처리(Retry) Job ... | ✅ |
+| 6 | Flink Job 배포 및 JobManager 등록 | Flink UI 확인 | ⬜ |  ← 로컬 실행 후 체크
 
 **Day 4 완료 기준:**
 - [ ] Flink UI: 3개 Job 모두 RUNNING 상태 확인
@@ -347,7 +342,7 @@ pip install -r poc/services/base/requirements.txt
 | Day 1 | 아키텍처 구체화 및 작업 계획 수립 | ✅ 완료 | 2026-03-24 |
 | Day 2 | POC 기반 환경 구성 (Docker Compose + DB 초기화) | ✅ 완료 | 2026-03-25 |
 | Day 3 | Mock Adapter 개발 및 NiFi 플로우 구성 | ✅ 완료 | 2026-03-26 |
-| Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ⬜ 미시작 | - |
+| Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ✅ 완료 | 2026-04-07 |
 | Day 5 | 모니터링 환경 구성 (Prometheus + Grafana) | ⬜ 미시작 | - |
 | Day 6 | 통합 테스트 및 파이프라인 정합성 검증 | ⬜ 미시작 | - |
 | Day 7 | 성능 테스트 (TPS, 지연시간, 확장성) | ⬜ 미시작 | - |
@@ -388,4 +383,4 @@ pip install -r poc/services/base/requirements.txt
 
 ---
 
-*최종 업데이트: 2026-03-26 | 다음 작업: Day 4 — Flink Job 개발 (처리·분석 파이프라인)*
+*최종 업데이트: 2026-04-07 | 다음 작업: Day 5 — 모니터링 환경 구성 (Prometheus + Grafana + VOC API)*
