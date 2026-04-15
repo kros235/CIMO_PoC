@@ -163,15 +163,14 @@ public class SendRequestJob {
                 "INSERT INTO msg_send_history " +
                 "(tx_id, channel, status, sender, receiver, " +
                 " retry_count, source, requested_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW()) " +
-                "ON CONFLICT (tx_id) DO NOTHING",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
                 (ps, msg) -> {
                     ps.setString(1, msg.getTxId());
                     ps.setString(2, msg.getChannel());
                     ps.setString(3, msg.getStatus());
                     ps.setString(4, msg.getSender());
                     ps.setString(5, msg.getReceiver());
-                    ps.setInt(6, msg.getRetryCount() != null ? msg.getRetryCount() : 0);
+                    ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
                 },
                 JdbcExecutionOptions.builder()

@@ -158,18 +158,17 @@ public class SendResultJob {
     private static SinkFunction<SendResult> buildPostgresSink() {
         return JdbcSink.sink(
                 "UPDATE msg_send_history SET " +
-                "  status = ?, result_code = ?, result_message = ?, " +
-                "  dispatched_at = ?, delivered_at = ?, updated_at = NOW() " +
+                "  status = ?, result_code = ?, " +
+                "  dispatched_at = ?, delivered_at = ? " +
                 "WHERE tx_id = ?",
                 (ps, result) -> {
-                    ps.setString(1, "DELIVERED".equals(result.getDisposition()) ? "DELIVERED" : "FAILED");
+                    ps.setString(1, ResultCodeClassifier.isSuccess(result.getResultCode()) ? "DELIVERED" : "FAILED");
                     ps.setString(2, result.getResultCode());
-                    ps.setString(3, result.getResultMessage());
-                    ps.setTimestamp(4, result.getDispatchedAt() != null
-                            ? Timestamp.from(Instant.parse(result.getDispatchedAt())) : null);
-                    ps.setTimestamp(5, result.getDeliveredAt() != null
-                            ? Timestamp.from(Instant.parse(result.getDeliveredAt())) : null);
-                    ps.setString(6, result.getTxId());
+                    ps.setTimestamp(3, result.getDispatchedAt() != null
+                            ? Timestamp.from(java.time.ZonedDateTime.parse(result.getDispatchedAt()).toInstant()) : null);
+                    ps.setTimestamp(4, result.getDeliveredAt() != null
+                            ? Timestamp.from(java.time.ZonedDateTime.parse(result.getDeliveredAt()).toInstant()) : null);
+                    ps.setString(5, result.getTxId());
                 },
                 JdbcExecutionOptions.builder()
                         .withBatchSize(100)
@@ -225,20 +224,13 @@ public class SendResultJob {
     private static SinkFunction<ChannelMetrics> buildMetricsSink() {
         return JdbcSink.sink(
                 "INSERT INTO msg_send_metrics " +
-                "(metric_time, channel, total_count, success_count, fail_count, success_rate, created_at) " +
-                "VALUES (NOW(), ?, ?, ?, ?, ?, NOW()) " +
-                "ON CONFLICT (metric_time, channel) DO UPDATE SET " +
-                "  total_count   = EXCLUDED.total_count, " +
-                "  success_count = EXCLUDED.success_count, " +
-                "  fail_count    = EXCLUDED.fail_count, " +
-                "  success_rate  = EXCLUDED.success_rate",
+                "(metric_time, channel, total_count, success_count, fail_count) " +
+                "VALUES (NOW(), ?, ?, ?, ?)",
                 (ps, m) -> {
                     ps.setString(1, m.channel);
                     ps.setLong(2, m.totalCount);
                     ps.setLong(3, m.successCount);
                     ps.setLong(4, m.failCount);
-                    ps.setDouble(5, m.totalCount > 0
-                            ? (double) m.successCount / m.totalCount * 100.0 : 0.0);
                 },
                 JdbcExecutionOptions.builder().withBatchSize(50).build(),
                 new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
