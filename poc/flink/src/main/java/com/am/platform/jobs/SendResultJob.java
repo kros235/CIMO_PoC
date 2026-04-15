@@ -46,10 +46,10 @@ import java.time.Instant;
  *
  * 환경변수:
  *   KAFKA_BOOTSTRAP_SERVERS  (기본: kafka:9092)
- *   POSTGRES_URL             (기본: jdbc:postgresql://postgres:5432/amdb)
- *   POSTGRES_USER            (기본: amuser)
- *   POSTGRES_PASSWORD        (기본: ampassword)
- *   MONGODB_URI              (기본: mongodb://amuser:ampassword@mongodb:27017/amdb)
+ *   POSTGRES_URL             (필수 환경변수, 예: jdbc:postgresql://postgres:5432/am_db)
+ *   POSTGRES_USER            (필수 환경변수, 예: am_user)
+ *   POSTGRES_PASSWORD        (필수 환경변수)
+ *   MONGODB_URI              (필수 환경변수, 예: mongodb://admin:admin_password@mongodb:27017/am_db?authSource=admin)
  */
 public class SendResultJob {
 
@@ -64,13 +64,15 @@ public class SendResultJob {
     private static final String TOPIC_DLQ     = "topic.send.dlq";
 
     private static final String POSTGRES_URL  =
-            System.getenv().getOrDefault("POSTGRES_URL", "jdbc:postgresql://postgres:5432/amdb");
+            System.getenv().getOrDefault("POSTGRES_URL",
+                "jdbc:postgresql://postgres:5432/am_db");
     private static final String POSTGRES_USER =
-            System.getenv().getOrDefault("POSTGRES_USER", "amuser");
+            System.getenv().getOrDefault("POSTGRES_USER", "am_user");
     private static final String POSTGRES_PASS =
-            System.getenv().getOrDefault("POSTGRES_PASSWORD", "ampassword");
+            System.getenv().getOrDefault("POSTGRES_PASSWORD", "am_password");
     private static final String MONGODB_URI   =
-            System.getenv().getOrDefault("MONGODB_URI", "mongodb://amuser:ampassword@mongodb:27017/amdb");
+            System.getenv().getOrDefault("MONGODB_URI",
+                "mongodb://admin:admin_password@mongodb:27017/am_db?authSource=admin");
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule());
@@ -193,7 +195,7 @@ public class SendResultJob {
             public void invoke(SendResult result, Context context) {
                 if (mongoClient == null) {
                     mongoClient = MongoClients.create(MONGODB_URI);
-                    db = mongoClient.getDatabase("amdb");
+                    db = mongoClient.getDatabase("am_db");
                 }
                 // 월별 컬렉션명 계산
                 String yearMonth = java.time.YearMonth.now().toString().replace("-", "");

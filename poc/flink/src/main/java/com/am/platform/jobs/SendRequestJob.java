@@ -15,10 +15,12 @@ import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsIni
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+
+import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
+import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
+import org.apache.flink.connector.jdbc.JdbcSink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.Properties;
 
 /**
  * 발송 요청 처리 Flink Job.
@@ -51,6 +53,14 @@ public class SendRequestJob {
     private static final String TOPIC_DISPATCH_RCS   = "topic.send.dispatch.rcs";
     private static final String TOPIC_DISPATCH_FAX   = "topic.send.dispatch.fax";
     private static final String TOPIC_DISPATCH_EMAIL = "topic.send.dispatch.email";
+
+    private static final String POSTGRES_URL  =
+            System.getenv().getOrDefault("POSTGRES_URL",
+                "jdbc:postgresql://postgres:5432/am_db");
+    private static final String POSTGRES_USER =
+            System.getenv().getOrDefault("POSTGRES_USER", "am_user");
+    private static final String POSTGRES_PASS =
+            System.getenv().getOrDefault("POSTGRES_PASSWORD", "am_password");
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule());
@@ -135,6 +145,9 @@ public class SendRequestJob {
                 .sinkTo(buildKafkaSink(TOPIC_DISPATCH_EMAIL))
                 .name("KafkaSink-EMAIL");
 
+        // PostgreSQL 발송 요청 이력 INSERT
+        rateLimitedStream.addSink(buildPostgresSink()).name("PostgresSink-Request");
+
         LOG.info("[SendRequestJob] Job 시작: bootstrapServers={}, groupId={}",
                 BOOTSTRAP_SERVERS, GROUP_ID);
 
@@ -142,13 +155,44 @@ public class SendRequestJob {
     }
 
     /**
+     * 발송 요청 이력을 PostgreSQL에 INSERT하는 Sink.
+     */
+    private static org.apache.flink.streaming.api.functions.sink.SinkFunction<SendMessage>
+            buildPostgresSink() {
+        return JdbcSink.sink(
+                "INSERT INTO msg_send_history " +
+                "(tx_id, channel, status, sender, receiver, " +
+                " retry_count, source, requested_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW()) " +
+                "ON CONFLICT (tx_id) DO NOTHING",
+                (ps, msg) -> {
+                    ps.setString(1, msg.getTxId());
+                    ps.setString(2, msg.getChannel());
+                    ps.setString(3, msg.getStatus());
+                    ps.setString(4, msg.getSender());
+                    ps.setString(5, msg.getReceiver());
+                    ps.setInt(6, msg.getRetryCount() != null ? msg.getRetryCount() : 0);
+                    ps.setString(7, msg.getSource());
+                },
+                JdbcExecutionOptions.builder()
+                        .withBatchSize(100)
+                        .withBatchIntervalMs(200)
+                        .withMaxRetries(3)
+                        .build(),
+                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                        .withUrl(POSTGRES_URL)
+                        .withDriverName("org.postgresql.Driver")
+                        .withUsername(POSTGRES_USER)
+                        .withPassword(POSTGRES_PASS)
+                        .build()
+        );
+    }
+
+    /**
      * SendMessage를 JSON 직렬화하여 지정 토픽으로 발행하는 KafkaSink 생성.
      */
     private static KafkaSink<SendMessage> buildKafkaSink(String topic) {
-        Properties producerProps = new Properties();
-        producerProps.setProperty("bootstrap.servers", BOOTSTRAP_SERVERS);
-        producerProps.setProperty("transaction.timeout.ms", "60000");
-
+        
         org.apache.flink.api.common.serialization.SerializationSchema<SendMessage> serializer =
                 value -> {
                     try {
@@ -166,7 +210,6 @@ public class SendRequestJob {
                                 .setTopic(topic)
                                 .setValueSerializationSchema(serializer)
                                 .build())
-                .setKafkaProducerConfig(producerProps)
                 .build();
     }
 }

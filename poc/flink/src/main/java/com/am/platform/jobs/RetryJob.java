@@ -214,7 +214,8 @@ public class RetryJob {
      * 동적 토픽 라우팅을 위한 이벤트 래퍼.
      * targetTopic 에 따라 dispatch.* 또는 dlq 토픽으로 발행된다.
      */
-    static class RetryEvent {
+    static class RetryEvent implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
         final String targetTopic;
         final String payload;
 
@@ -228,8 +229,6 @@ public class RetryJob {
      * RetryEvent.targetTopic에 따라 동적으로 토픽을 선택하는 KafkaSink.
      */
     private static KafkaSink<RetryEvent> buildDynamicKafkaSink() {
-        Properties props = new Properties();
-        props.setProperty("bootstrap.servers", BOOTSTRAP_SERVERS);
 
         org.apache.flink.api.common.serialization.SerializationSchema<RetryEvent> serializer =
                 event -> {
@@ -247,7 +246,6 @@ public class RetryJob {
                                 .setTopicSelector((org.apache.flink.connector.kafka.sink.TopicSelector<RetryEvent>) event -> event.targetTopic)
                                 .setValueSerializationSchema(serializer)
                                 .build())
-                .setKafkaProducerConfig(props)
                 .build();
     }
 }
