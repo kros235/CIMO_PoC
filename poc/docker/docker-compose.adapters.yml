@@ -152,4 +152,5 @@ services:
 
 networks:
   am-network:
-    external: true   # docker-compose.yml 에서 생성된 네트워크 공유
+    external: true    # docker-compose.yml 에서 생성된 네트워크 공유
+    name: docker_am-network 

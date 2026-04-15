@@ -94,6 +94,11 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 2
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-am_db}
+      - POSTGRES_USER=${POSTGRES_USER:-am_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-am_password}
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin_password}@mongodb:27017/${POSTGRES_DB:-am_db}?authSource=admin
     networks:
       - am-network
 
@@ -108,7 +113,11 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 2
+        taskmanager.numberOfTaskSlots: 6
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-am_db}
+      - POSTGRES_USER=${POSTGRES_USER:-am_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-am_password}
+      - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin_password}@mongodb:27017/${POSTGRES_DB:-am_db}?authSource=admin
     networks:
       - am-network
 
