@@ -16,9 +16,11 @@ import threading
 
 import uvicorn
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from base.metrics_helper import get_or_create_counter, get_or_create_histogram
 from base.adapter_base import AdapterBase
 
 logging.basicConfig(
@@ -30,17 +32,17 @@ logger = logging.getLogger("mms-adapter")
 # ──────────────────────────────────────────────
 # Prometheus 메트릭
 # ──────────────────────────────────────────────
-mms_send_total = Counter(
+mms_send_total = get_or_create_counter(
     "am_mms_send_total",
     "MMS 발송 처리 총 건수",
     ["status"],
 )
-mms_send_duration = Histogram(
+mms_send_duration = get_or_create_histogram(
     "am_mms_send_duration_ms",
     "MMS 발송 처리 지연(ms)",
     buckets=[20, 50, 80, 120, 160, 200, 300, 500, 800, 1500],
 )
-mms_attachment_size = Histogram(
+mms_attachment_size = get_or_create_histogram(
     "am_mms_attachment_count",
     "MMS 첨부파일 개수",
     buckets=[0, 1, 2, 3, 5, 10],

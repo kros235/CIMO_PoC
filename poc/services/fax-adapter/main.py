@@ -17,9 +17,11 @@ import threading
 
 import uvicorn
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from base.metrics_helper import get_or_create_counter, get_or_create_histogram
 from base.adapter_base import AdapterBase
 
 logging.basicConfig(
@@ -31,12 +33,12 @@ logger = logging.getLogger("fax-adapter")
 # ──────────────────────────────────────────────
 # Prometheus 메트릭
 # ──────────────────────────────────────────────
-fax_send_total = Counter(
+fax_send_total = get_or_create_counter(
     "am_fax_send_total",
     "FAX 발송 처리 총 건수",
     ["status", "fail_reason"],
 )
-fax_send_duration = Histogram(
+fax_send_duration = get_or_create_histogram(
     "am_fax_send_duration_ms",
     "FAX 발송 처리 지연(ms)",
     buckets=[50, 100, 150, 200, 300, 500, 800, 1200, 2000],

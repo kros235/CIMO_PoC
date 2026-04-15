@@ -18,9 +18,11 @@ import threading
 
 import uvicorn
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from base.metrics_helper import get_or_create_counter, get_or_create_histogram
 from base.adapter_base import AdapterBase
 
 logging.basicConfig(
@@ -35,12 +37,12 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # ──────────────────────────────────────────────
 # Prometheus 메트릭
 # ──────────────────────────────────────────────
-email_send_total = Counter(
+email_send_total = get_or_create_counter(
     "am_email_send_total",
     "Email 발송 처리 총 건수",
     ["status", "fail_reason"],
 )
-email_send_duration = Histogram(
+email_send_duration = get_or_create_histogram(
     "am_email_send_duration_ms",
     "Email 발송 처리 지연(ms)",
     buckets=[5, 10, 20, 30, 50, 80, 120, 200, 400],

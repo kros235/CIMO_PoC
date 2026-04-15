@@ -17,9 +17,11 @@ import threading
 
 import uvicorn
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from base.metrics_helper import get_or_create_counter, get_or_create_histogram
 from base.adapter_base import AdapterBase
 
 logging.basicConfig(
@@ -31,16 +33,16 @@ logger = logging.getLogger("rcs-adapter")
 # ──────────────────────────────────────────────
 # Prometheus 메트릭
 # ──────────────────────────────────────────────
-rcs_send_total = Counter(
+rcs_send_total = get_or_create_counter(
     "am_rcs_send_total",
     "RCS 발송 처리 총 건수",
     ["status"],
 )
-rcs_fallback_total = Counter(
+rcs_fallback_total = get_or_create_counter(
     "am_rcs_fallback_total",
     "RCS→SMS fallback 발생 건수",
 )
-rcs_send_duration = Histogram(
+rcs_send_duration = get_or_create_histogram(
     "am_rcs_send_duration_ms",
     "RCS 발송 처리 지연(ms)",
     buckets=[10, 30, 60, 100, 150, 200, 300, 500, 1000],

@@ -16,11 +16,12 @@ import threading
 
 import uvicorn
 from fastapi import FastAPI
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import make_asgi_app
 
 # base 모듈 경로 추가 (컨테이너 내 공유 볼륨 마운트 기준)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from base.metrics_helper import get_or_create_counter, get_or_create_histogram
 from base.adapter_base import AdapterBase
 
 # 로깅 설정
@@ -33,12 +34,12 @@ logger = logging.getLogger("sms-adapter")
 # ──────────────────────────────────────────────
 # Prometheus 메트릭 정의
 # ──────────────────────────────────────────────
-sms_send_total = Counter(
+sms_send_total = get_or_create_counter(
     "am_sms_send_total",
     "SMS 발송 처리 총 건수",
-    ["status"],  # label: DELIVERED / FAILED / RETRYING
+    ["status"],
 )
-sms_send_duration = Histogram(
+sms_send_duration = get_or_create_histogram(
     "am_sms_send_duration_ms",
     "SMS 발송 처리 지연(ms)",
     buckets=[10, 30, 50, 80, 100, 150, 200, 300, 500, 1000],
