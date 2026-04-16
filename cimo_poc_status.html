@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CIMO_PoC — AM 플랫폼 진행 현황</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=IBM+Plex+Sans+KR:wght@300;400;500;700&display=swap');
+  :root {
+    --bg:#0a0e1a;--bg2:#0f1525;--bg3:#151c30;--border:#1e2d4a;
+    --done:#00d4a0;--done-dim:#00d4a018;--todo:#4a5568;--todo-dim:#4a556810;
+    --blue:#4a9eff;--blue-dim:#4a9eff15;--red:#ff4a6e;--yellow:#f5a623;
+    --text:#c8d6f0;--text-dim:#5a6a8a;--text-bright:#e8f0ff;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans KR',sans-serif;min-height:100vh;padding:40px 24px;max-width:1400px;margin:0 auto;}
+  .header{text-align:center;margin-bottom:36px;}
+  .header-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--done);border:1px solid var(--done);padding:3px 12px;border-radius:2px;letter-spacing:2px;margin-bottom:12px;}
+  .header h1{font-size:24px;font-weight:700;color:var(--text-bright);margin-bottom:5px;}
+  .header p{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;}
+  .progress-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:18px 26px;margin-bottom:24px;display:flex;align-items:center;gap:18px;}
+  .progress-label{font-size:11px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+  .progress-bar-wrap{flex:1;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+  .progress-bar-fill{height:100%;width:57%;background:linear-gradient(90deg,var(--done),var(--blue));border-radius:3px;animation:fillBar 1.5s ease-out;}
+  @keyframes fillBar{from{width:0}}
+  .progress-pct{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--done);white-space:nowrap;}
+  .section-title{font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;}
+  .stats-row{display:flex;gap:10px;margin-bottom:24px;flex-wrap:wrap;}
+  .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px 20px;flex:1;min-width:120px;text-align:center;}
+  .stat-value{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:700;color:var(--done);}
+  .stat-value.blue{color:var(--blue);}.stat-value.yellow{color:var(--yellow);}.stat-value.red{color:var(--red);}
+  .stat-label{font-size:9px;color:var(--text-dim);margin-top:3px;font-family:'IBM Plex Mono',monospace;}
+  .arch-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:22px 26px;margin-bottom:24px;}
+  .pipeline{display:flex;align-items:center;gap:0;overflow-x:auto;padding-bottom:6px;margin-bottom:20px;}
+  .pipe-group{display:flex;flex-direction:column;align-items:center;}
+  .pipe-node{border-radius:6px;padding:10px 8px;text-align:center;width:100px;transition:transform 0.2s;cursor:default;}
+  .pipe-node:hover{transform:translateY(-2px);}
+  .pipe-node.done{background:var(--done-dim);border:1px solid var(--done);}
+  .pipe-node.todo{background:var(--todo-dim);border:1px solid var(--todo);}
+  .pipe-node .node-icon{font-size:15px;margin-bottom:4px;}
+  .pipe-node .node-name{font-size:10px;font-weight:700;margin-bottom:2px;}
+  .pipe-node.done .node-name{color:var(--done);}.pipe-node.todo .node-name{color:var(--todo);}
+  .pipe-node .node-sub{font-size:8px;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);line-height:1.4;}
+  .pipe-status{font-size:8px;font-family:'IBM Plex Mono',monospace;margin-top:4px;padding:2px 6px;border-radius:10px;}
+  .pipe-status.done{background:var(--done-dim);color:var(--done);border:1px solid #00d4a030;}
+  .pipe-status.todo{background:var(--todo-dim);color:var(--todo);border:1px solid #4a556830;}
+  .pipe-arrow{color:var(--text-dim);font-size:13px;padding:0 4px;margin-bottom:18px;}
+  .pipe-arrow.done{color:var(--done);}.pipe-arrow.todo{color:var(--todo);}
+  .flow-diagram{padding-top:18px;border-top:1px solid var(--border);}
+  .flow-sub-title{font-size:10px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;margin-bottom:10px;letter-spacing:1px;}
+  .flow-row{display:flex;align-items:center;gap:5px;margin-bottom:6px;flex-wrap:wrap;}
+  .flow-box{font-family:'IBM Plex Mono',monospace;font-size:9px;padding:4px 8px;border-radius:4px;white-space:nowrap;}
+  .flow-box.done{background:var(--done-dim);border:1px solid #00d4a040;color:var(--done);}
+  .flow-box.todo{background:var(--todo-dim);border:1px solid #4a556830;color:var(--todo);}
+  .flow-box.blue{background:var(--blue-dim);border:1px solid #4a9eff40;color:var(--blue);}
+  .flow-arrow-sm{color:var(--text-dim);font-size:10px;}
+  .flow-arrow-sm.done{color:var(--done);}
+  .days-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-bottom:24px;}
+  .day-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;transition:border-color 0.2s;}
+  .day-card:hover{border-color:#2a3d60;}
+  .day-card.done{border-left:3px solid var(--done);}
+  .day-card.todo{border-left:3px solid var(--todo);}
+  .day-card-header{padding:14px 16px 11px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+  .day-num{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--text-dim);letter-spacing:1px;}
+  .day-title{font-size:12px;font-weight:700;color:var(--text-bright);margin-top:3px;line-height:1.4;}
+  .day-badge{font-size:9px;font-family:'IBM Plex Mono',monospace;padding:2px 7px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
+  .day-badge.done{background:var(--done-dim);color:var(--done);border:1px solid #00d4a030;}
+  .day-badge.todo{background:var(--todo-dim);color:var(--todo);border:1px solid #4a556830;}
+  .day-tabs{display:flex;border-bottom:1px solid var(--border);}
+  .day-tab{flex:1;padding:7px 0;text-align:center;font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s;background:none;border-top:none;border-left:none;border-right:none;}
+  .day-tab:hover{color:var(--text);}
+  .day-tab.active{color:var(--done);border-bottom-color:var(--done);}
+  .day-tab.active.todo-tab{color:var(--todo);border-bottom-color:var(--todo);}
+  .day-panel{padding:12px 16px;display:none;}
+  .day-panel.active{display:block;}
+  .task-list{list-style:none;}
+  .task-item{display:flex;align-items:flex-start;gap:7px;padding:5px 0;border-bottom:1px solid #1e2d4a50;font-size:11px;line-height:1.5;}
+  .task-item:last-child{border-bottom:none;}
+  .task-icon{font-size:9px;margin-top:2px;flex-shrink:0;}
+  .task-text.done-text{color:var(--text-dim);}
+  .task-text.todo-text{color:var(--text);}
+  .done-detail{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--text-dim);margin-top:3px;line-height:1.5;}
+  .done-detail span{color:var(--done);}
+  .trouble-list{list-style:none;}
+  .trouble-item{display:flex;gap:7px;padding:6px 0;border-bottom:1px solid #1e2d4a50;align-items:flex-start;}
+  .trouble-item:last-child{border-bottom:none;}
+  .trouble-num{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--red);background:#ff4a6e10;border:1px solid #ff4a6e20;border-radius:3px;padding:1px 5px;flex-shrink:0;margin-top:1px;}
+  .trouble-content{flex:1;}
+  .trouble-problem{font-size:11px;font-weight:500;color:var(--text-bright);margin-bottom:1px;}
+  .trouble-cause{font-size:10px;color:var(--text-dim);margin-bottom:1px;}
+  .trouble-fix{font-size:10px;color:var(--done);font-family:'IBM Plex Mono',monospace;}
+  .demo-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px 24px;margin-bottom:24px;}
+  .demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px;}
+  .demo-col-title{font-size:11px;font-family:'IBM Plex Mono',monospace;margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid var(--border);}
+  .demo-col-title.yes{color:var(--done);}.demo-col-title.no{color:var(--todo);}
+  .demo-item{display:flex;align-items:flex-start;gap:7px;padding:4px 0;font-size:11px;color:var(--text);line-height:1.4;}
+  .demo-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+  .demo-dot.yes{background:var(--done);}.demo-dot.no{background:var(--todo);}
+  .demo-sub{font-size:9px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;margin-top:1px;}
+  @media(max-width:640px){.demo-grid{grid-template-columns:1fr;}.pipeline{flex-wrap:nowrap;}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-badge">CIMO_PoC · AM PLATFORM POC</div>
+  <h1>발송 플랫폼 고도화 POC — 전체 진행 현황</h1>
+  <p>NiFi 2.0 + Kafka 3.6 + Flink 1.18 · Docker Compose · 2026-04-16 기준</p>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card"><div class="stat-value">4/7</div><div class="stat-label">DAY 완료</div></div>
+  <div class="stat-card"><div class="stat-value blue">3</div><div class="stat-label">FLINK JOBS RUNNING</div></div>
+  <div class="stat-card"><div class="stat-value">5</div><div class="stat-label">MOCK ADAPTERS UP</div></div>
+  <div class="stat-card"><div class="stat-value yellow">10</div><div class="stat-label">KAFKA TOPICS</div></div>
+  <div class="stat-card"><div class="stat-value red">11</div><div class="stat-label">BUGS FIXED</div></div>
+  <div class="stat-card"><div class="stat-value">E2E</div><div class="stat-label">PIPELINE VERIFIED ✅</div></div>
+</div>
+
+<div class="progress-section">
+  <span class="progress-label">전체 진행률 DAY 4/7</span>
+  <div class="progress-bar-wrap"><div class="progress-bar-fill"></div></div>
+  <span class="progress-pct">57%</span>
+</div>
+
+<div class="arch-section">
+  <div class="section-title">▸ 전체 아키텍처 파이프라인 — 구현 현황</div>
+  <div class="pipeline">
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">📨</div><div class="node-name">발송 시스템</div><div class="node-sub">CI / AB캠페인<br>제휴 CRM</div></div><div class="pipe-status done">✅ MOCK</div></div>
+    <div class="pipe-arrow done">→</div>
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">🔄</div><div class="node-name">Apache NiFi</div><div class="node-sub">txId 검증·추적<br>HTTP 수신</div></div><div class="pipe-status done">✅ RUNNING</div></div>
+    <div class="pipe-arrow done">→</div>
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">📦</div><div class="node-name">Apache Kafka</div><div class="node-sub">10개 토픽<br>피크 버퍼링</div></div><div class="pipe-status done">✅ RUNNING</div></div>
+    <div class="pipe-arrow done">→</div>
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">⚡</div><div class="node-name">Apache Flink</div><div class="node-sub">검증·분배·Retry<br>Job 3개</div></div><div class="pipe-status done">✅ RUNNING</div></div>
+    <div class="pipe-arrow done">→</div>
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">📡</div><div class="node-name">Mock Adapter</div><div class="node-sub">SMS·MMS·RCS<br>FAX·Email</div></div><div class="pipe-status done">✅ RUNNING</div></div>
+    <div class="pipe-arrow done">→</div>
+    <div class="pipe-group"><div class="pipe-node done"><div class="node-icon">🗄️</div><div class="node-name">DB 저장</div><div class="node-sub">PostgreSQL<br>MongoDB</div></div><div class="pipe-status done">✅ VERIFIED</div></div>
+    <div class="pipe-arrow todo">→</div>
+    <div class="pipe-group"><div class="pipe-node todo"><div class="node-icon">📊</div><div class="node-name">모니터링</div><div class="node-sub">Grafana<br>VOC API</div></div><div class="pipe-status todo">⬜ DAY 5</div></div>
+    <div class="pipe-arrow todo">→</div>
+    <div class="pipe-group"><div class="pipe-node todo"><div class="node-icon">🚀</div><div class="node-name">성능 검증</div><div class="node-sub">2,000 TPS<br>5천만건/일</div></div><div class="pipe-status todo">⬜ DAY 7</div></div>
+  </div>
+  <div class="flow-diagram">
+    <div class="flow-sub-title">▸ E2E 발송 흐름 (현재 검증 완료 구간)</div>
+    <div class="flow-row">
+      <div class="flow-box blue">HTTP POST /am/send</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">NiFi (txId 35자리 검증)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">topic.send.request</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">SendRequestJob (검증·분배·INSERT)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">topic.send.dispatch.{ch}</div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-box done">Mock Adapter (발송 시뮬)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">topic.send.result</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">SendResultJob (분류·UPDATE)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">PostgreSQL DELIVERED ✅</div>
+    </div>
+    <div class="flow-row" style="margin-top:3px;">
+      <div class="flow-box done">5xxxx (재처리코드)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">topic.send.retry</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">RetryJob (30s/60s/120s 지수백오프)</div><span class="flow-arrow-sm done">→</span>
+      <div class="flow-box done">재발송 or topic.send.dlq</div>
+    </div>
+  </div>
+</div>
+
+<div class="section-title" style="margin-left:2px;">▸ DAY별 작업 현황 — 완료 내역 상세 (탭 클릭으로 전환)</div>
+<div class="days-grid">
+
+  <!-- Day 1 -->
+  <div class="day-card done">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 01 · 2026-03-24</div><div class="day-title">아키텍처 구체화 및 작업 계획 수립</div></div>
+      <span class="day-badge done">✅ 완료</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active" onclick="switchTab(this,'d1a')">완료 내역</button>
+      <button class="day-tab" onclick="switchTab(this,'d1b')">산출물</button>
+    </div>
+    <div id="d1a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">AM_ARCHITECTURE.md 14개 섹션 전체 작성</div><div class="done-detail"><span>§12</span> txId 35자리 구조 · <span>§13</span> AS-IS 연동 4가지 · <span>§14</span> MongoDB 월별 적재 · <span>§15</span> PostgreSQL 선택 근거</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Kafka 토픽 10개 체계 확정</div><div class="done-detail"><span>topic.send.request</span> / <span>dispatch.{ch}</span> / <span>result</span> / <span>retry</span> / <span>dlq</span> / <span>batch</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">발송 방식 2종 확정 — 실시간(03) / 배치(01·02)</div><div class="done-detail">sendMethodCode: <span>01·02</span>=배치 · <span>03</span>=실시간 · <span>04·05</span>=준실시간</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">재처리 정책 설계 — 지수백오프 3단계</div><div class="done-detail"><span>1회</span>=30s · <span>2회</span>=60s · <span>3회</span>=120s · 초과→DLQ</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">코어/비즈니스 영역 분리 설계 확정</div><div class="done-detail">코어: NiFi+Kafka+Flink(플랫폼팀 자산) · 비즈니스: Adapter+캠페인+템플릿(서비스담당)</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">POC 디렉토리 구조 생성 + README 7일 계획 수립</div></div></li>
+      </ul>
+    </div>
+    <div id="d1b" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">📄</span><span class="task-text done-text">docs/architecture/AM_ARCHITECTURE.md (14개 섹션)</span></li>
+        <li class="task-item"><span class="task-icon">📄</span><span class="task-text done-text">README.md (7일 전체 작업 계획)</span></li>
+        <li class="task-item"><span class="task-icon">📁</span><span class="task-text done-text">poc/ 디렉토리 구조 (docker·nifi·flink·services·monitoring)</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 2 -->
+  <div class="day-card done">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 02 · 2026-03-25</div><div class="day-title">Docker Compose 환경 + DB 초기화</div></div>
+      <span class="day-badge done">✅ 완료</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active" onclick="switchTab(this,'d2a')">완료 내역</button>
+      <button class="day-tab" onclick="switchTab(this,'d2b')">산출물</button>
+    </div>
+    <div id="d2a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Docker Compose — 컨테이너 10개 정의 완료</div><div class="done-detail">NiFi·Kafka·ZooKeeper·Flink JM·TM·PostgreSQL·MongoDB·Prometheus·Grafana·Kafka-UI</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">init.sql — PostgreSQL 스키마 자동 초기화</div><div class="done-detail"><span>msg_send_history</span> / <span>msg_send_metrics</span> / <span>msg_batch_schedule</span> / <span>msg_dlq</span> / <span>ref_sender_code</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">init-mongo.js — MongoDB 월별 컬렉션·인덱스</div><div class="done-detail"><span>send_histories_{YYYYMM}</span> 컬렉션 + customerId·txId 인덱스</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Prometheus / Grafana provisioning 설정</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">.env.example — 절대경로 제거 환경변수 템플릿</div></div></li>
+        <li class="task-item"><span class="task-icon">⚠️</span><div><div class="task-text done-text">이슈 해결: NiFi 2.0 HTTPS 강제 → 1.23.2로 교체</div><div class="done-detail">2.0은 keystore 자동생성+HTTPS 8443 강제 · <span>1.23.2</span> 교체 후 HTTP 8080 정상</div></div></li>
+      </ul>
+    </div>
+    <div id="d2b" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">🐳</span><span class="task-text done-text">poc/docker/docker-compose.yml</span></li>
+        <li class="task-item"><span class="task-icon">🐳</span><span class="task-text done-text">poc/docker/docker-compose.adapters.yml</span></li>
+        <li class="task-item"><span class="task-icon">🗄️</span><span class="task-text done-text">poc/init/init.sql (5개 테이블 + 인덱스)</span></li>
+        <li class="task-item"><span class="task-icon">🗄️</span><span class="task-text done-text">poc/init/init-mongo.js</span></li>
+        <li class="task-item"><span class="task-icon">📄</span><span class="task-text done-text">poc/config/kafka-topics.sh</span></li>
+        <li class="task-item"><span class="task-icon">📄</span><span class="task-text done-text">poc/monitoring/prometheus.yml</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 3 -->
+  <div class="day-card done">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 03 · 2026-03-26</div><div class="day-title">Mock Adapter 5개 + NiFi 플로우 구성</div></div>
+      <span class="day-badge done">✅ 완료</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active" onclick="switchTab(this,'d3a')">완료 내역</button>
+      <button class="day-tab" onclick="switchTab(this,'d3b')">결과코드 체계</button>
+    </div>
+    <div id="d3a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">SMS Adapter — 성공률 95%, 지연 50ms</div><div class="done-detail">포트 <span>8101</span> · topic.send.dispatch.sms 구독 · /health /metrics</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">MMS Adapter — 성공률 93%, 지연 80ms, 첨부 2MB 검증</div><div class="done-detail">포트 <span>8102</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">RCS Adapter — 성공률 90%, fallback 7%, 코드 50002</div><div class="done-detail">포트 <span>8103</span> · RCS 미지원 단말 → SMS fallback 시뮬레이션</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">FAX Adapter — 성공률 85%, 지연 200ms</div><div class="done-detail">포트 <span>8104</span> · 50003=통화중 / 40005=무응답 / 40006=용지없음</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Email Adapter — 성공률 98%, 지연 30ms</div><div class="done-detail">포트 <span>8105</span> · 40007=바운스 / 40008=스팸 / 50004=SMTP오류</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">NiFi 플로우 — HTTP → txId 35자리 검증 → Kafka</div><div class="done-detail">포트 <span>8090</span> POST /am/send · sendMethodCode 01~05 범위 검증</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">공통 base 모듈 — adapter_base.py · tx_id.py · kafka_client.py</div></div></li>
+      </ul>
+    </div>
+    <div id="d3b" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon" style="color:var(--done)">●</span><div><div class="task-text done-text"><b>10000</b> — 정상 전송 → STORE → DB 저장</div></div></li>
+        <li class="task-item"><span class="task-icon" style="color:var(--red)">●</span><div><div class="task-text done-text"><b>4xxxx</b> — 영구 실패 → DLQ</div><div class="done-detail">40001=수신번호오류 40002=타임아웃 40003=네트워크 40004=MMS첨부초과<br>40005=FAX무응답 40006=FAX용지 40007=이메일바운스 40008=스팸</div></div></li>
+        <li class="task-item"><span class="task-icon" style="color:var(--yellow)">●</span><div><div class="task-text done-text"><b>50001</b> — 통신사 일시오류 → Retry</div></div></li>
+        <li class="task-item"><span class="task-icon" style="color:var(--blue)">●</span><div><div class="task-text done-text"><b>50002</b> — RCS 미지원 단말 → SMS fallback (채널변경 + Retry)</div></div></li>
+        <li class="task-item"><span class="task-icon" style="color:var(--yellow)">●</span><div><div class="task-text done-text"><b>50003</b> — FAX 통화중 → Retry</div></div></li>
+        <li class="task-item"><span class="task-icon" style="color:var(--yellow)">●</span><div><div class="task-text done-text"><b>50004</b> — SMTP 일시오류 → Retry</div></div></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 4 -->
+  <div class="day-card done">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 04 · 2026-04-15~16</div><div class="day-title">Flink Job 3개 + E2E 파이프라인 검증</div></div>
+      <span class="day-badge done">✅ 완료</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active" onclick="switchTab(this,'d4a')">완료 내역</button>
+      <button class="day-tab" onclick="switchTab(this,'d4b')">트러블슈팅 11건</button>
+      <button class="day-tab" onclick="switchTab(this,'d4c')">E2E 검증 결과</button>
+    </div>
+    <div id="d4a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">SendRequestJob — 검증·채널분배·DB INSERT</div><div class="done-detail">ValidationOperator(txId·채널·receiver·messageBody) → ChannelDispatchOperator → RateLimitOperator(채널별 TPS) → dispatch 토픽 5개 분배 + <span>msg_send_history INSERT</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">SendResultJob — 결과분류·DB UPDATE·Metrics 집계</div><div class="done-detail">ResultCodeClassifier(STORE/RETRY/FALLBACK/DLQ) → PostgreSQL UPDATE(status·result_code·dispatched_at·delivered_at) → MongoDB UPDATE → 1분 Tumbling Window → <span>msg_send_metrics INSERT</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">RetryJob — 지수백오프 재처리 + DLQ 분류</div><div class="done-detail">keyBy(txId) → RetryProcessFunction(ValueState 재시도횟수) → 타이머(30s/60s/120s) → dispatch 재발송 or <span>topic.send.dlq</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Maven 빌드 — fat-jar 25MB (am-flink-fat.jar)</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">metrics_helper.py — Prometheus Counter 중복 등록 방지</div><div class="done-detail">get_or_create_counter() / get_or_create_histogram() · REGISTRY 체크 후 재사용</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">E2E 검증 — DISPATCHING → DELIVERED 확인</div><div class="done-detail">txId: <span>00000000000010310600100000000000003</span> · SMS · DELIVERED · 10000</div></div></li>
+      </ul>
+    </div>
+    <div id="d4b" class="day-panel">
+      <ul class="trouble-list">
+        <li class="trouble-item"><span class="trouble-num">#1</span><div class="trouble-content"><div class="trouble-problem">SendResultJob RESTARTING</div><div class="trouble-cause">원인: PostgreSQL 비밀번호 하드코딩 불일치</div><div class="trouble-fix">→ .env 환경변수 주입 구조로 변경</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#2</span><div class="trouble-content"><div class="trouble-problem">SendRequestJob RESTARTING</div><div class="trouble-cause">원인: setKafkaProducerConfig JMX Producer ID 충돌</div><div class="trouble-fix">→ Properties props 및 setKafkaProducerConfig 제거</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#3</span><div class="trouble-content"><div class="trouble-problem">RetryJob RESTARTING (1차)</div><div class="trouble-cause">원인: 동일 JMX 충돌</div><div class="trouble-fix">→ 동일하게 제거</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#4</span><div class="trouble-content"><div class="trouble-problem">RetryJob RESTARTING (2차)</div><div class="trouble-cause">원인: RetryEvent Serializable 미구현 → Checkpoint 직렬화 실패</div><div class="trouble-fix">→ implements java.io.Serializable + serialVersionUID 추가</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#5</span><div class="trouble-content"><div class="trouble-problem">RetryJob RESTARTING (3차)</div><div class="trouble-cause">원인: TaskManager 슬롯 2개로 Job 3개 실행 불가</div><div class="trouble-fix">→ numberOfTaskSlots: 2→6 증가</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#6</span><div class="trouble-content"><div class="trouble-problem">Mock Adapter 전체 기동 실패</div><div class="trouble-cause">원인: Prometheus Counter 모듈 레벨 전역 선언 → uvicorn 재시작 시 중복</div><div class="trouble-fix">→ metrics_helper.py 작성 + sys.path.insert 순서 수정</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#7</span><div class="trouble-content"><div class="trouble-problem">DB INSERT 없음</div><div class="trouble-cause">원인: SendRequestJob에 buildPostgresSink() 미구현</div><div class="trouble-fix">→ JdbcSink INSERT 메서드 추가</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#8</span><div class="trouble-content"><div class="trouble-problem">SendResultJob Checkpoint 실패</div><div class="trouble-cause">원인: Instant.parse()가 +09:00 오프셋 미지원</div><div class="trouble-fix">→ ZonedDateTime.parse().toInstant() 변경</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#9</span><div class="trouble-content"><div class="trouble-problem">INSERT SQL 오류 — ON CONFLICT</div><div class="trouble-cause">원인: tx_id 컬럼에 UNIQUE 제약 없음</div><div class="trouble-fix">→ ON CONFLICT 구문 제거</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#10</span><div class="trouble-content"><div class="trouble-problem">INSERT SQL 오류 — success_rate 컬럼 없음</div><div class="trouble-cause">원인: 실제 msg_send_metrics 테이블과 SQL 불일치</div><div class="trouble-fix">→ 실제 컬럼(total/success/fail_count) 기준으로 수정</div></div></li>
+        <li class="trouble-item"><span class="trouble-num">#11</span><div class="trouble-content"><div class="trouble-problem">status 항상 FAILED</div><div class="trouble-cause">원인: disposition 값이 STORE인데 "DELIVERED"와 비교</div><div class="trouble-fix">→ ResultCodeClassifier.isSuccess(resultCode) 로 변경</div></div></li>
+      </ul>
+    </div>
+    <div id="d4c" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">Flink Job 3개 RUNNING 확인</div><div class="done-detail">SendRequestJob · SendResultJob · RetryJob · TaskManager 슬롯 6개 사용 중</div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">E2E 파이프라인 메시지 1건 검증 완료</div><div class="done-detail">txId=<span>00000000000010310600100000000000003</span><br>channel=<span>SMS</span> · status=<span>DELIVERED</span> · result_code=<span>10000</span><br>dispatched_at = delivered_at = <span>2026-04-15 21:10:15</span></div></div></li>
+        <li class="task-item"><span class="task-icon">✅</span><div><div class="task-text done-text">PostgreSQL 2단계 적재 확인</div><div class="done-detail"><span>DISPATCHING</span>(SendRequestJob INSERT) → <span>DELIVERED</span>(SendResultJob UPDATE)</div></div></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">RCS fallback SMS 전환 검증 — Day 6 예정</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">Rate Limiting TPS 초과 지연 검증 — Day 7 예정</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 5 -->
+  <div class="day-card todo">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 05 · 예상 3~4시간</div><div class="day-title">모니터링 강화 + VOC 조회 API</div></div>
+      <span class="day-badge todo">⬜ 미시작</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active todo-tab" onclick="switchTab(this,'d5a')">작업 목록</button>
+      <button class="day-tab todo-tab" onclick="switchTab(this,'d5b')">완료 기준</button>
+    </div>
+    <div id="d5a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">Prometheus scrape 설정 — Adapter /metrics 수집 연결</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">Grafana 데이터소스 설정 — Prometheus 연결</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">Grafana 대시보드 4개 패널 — TPS·성공률·재처리 현황·파이프라인 지연</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">이상징후 알림 규칙 — 성공률 95% 이하 경보 (alert-rules.yml)</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">VOC 조회 API (FastAPI, 포트 8200)</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">GET /api/v1/history/receiver/{phone} 응답 3초↓</span></li>
+      </ul>
+    </div>
+    <div id="d5b" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">Grafana localhost:3000 — 4개 패널 대시보드 확인</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">발송 TPS 실시간 그래프 표시 확인</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">채널별 성공률 실시간 표시 확인</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">VOC API 응답 3초 이내 확인</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 6 -->
+  <div class="day-card todo">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 06 · 예상 2~3시간</div><div class="day-title">통합 테스트 및 파이프라인 정합성 검증</div></div>
+      <span class="day-badge todo">⬜ 미시작</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active todo-tab" onclick="switchTab(this,'d6a')">작업 목록</button>
+      <button class="day-tab todo-tab" onclick="switchTab(this,'d6b')">완료 기준</button>
+    </div>
+    <div id="d6a" class="day-panel active">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">통합 테스트 스크립트 — 1,000건 투입 → 전 구간 추적</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">정합성 검증 — 투입 건수 vs DB 적재 건수 비교</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">장애 격리 테스트 — SMS Adapter 강제 종료 → 다른 채널 정상</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">재처리 동작 검증 — 실패율 30% → retry 토픽 → 자동 재처리</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">RCS fallback 검증 — RCS 실패 → SMS 채널 자동 전환</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">DLQ 동작 검증 — 3회 실패 → topic.send.dlq 이동</span></li>
+      </ul>
+    </div>
+    <div id="d6b" class="day-panel">
+      <ul class="task-list">
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">정합성: 투입 1,000건 대비 DB 적재 999건↑ (99.9%)</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">장애 격리: SMS 중단 시 MMS·RCS·FAX·Email 정상 동작</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">재처리: 실패 건의 99%↑ retry 후 DB 적재</span></li>
+        <li class="task-item"><span class="task-icon">□</span><span class="task-text todo-text">DLQ: 3회 실패 건 전체 DLQ 토픽 이동</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Day 7 -->
+  <div class="day-card todo" style="grid-column:1/-1;">
+    <div class="day-card-header">
+      <div><div class="day-num">DAY 07 · 예상 3~4시간</div><div class="day-title">성능 테스트 3 시나리오 — 실시간 / 배치 / 복합 발송</div></div>
+      <span class="day-badge todo">⬜ 미시작</span>
+    </div>
+    <div class="day-tabs">
+      <button class="day-tab active todo-tab" onclick="switchTab(this,'d7a')">시나리오 A — 실시간</button>
+      <button class="day-tab todo-tab" onclick="switchTab(this,'d7b')">시나리오 B — 배치</button>
+      <button class="day-tab todo-tab" onclick="switchTab(this,'d7c')">시나리오 C — 복합</button>
+    </div>
+    <div id="d7a" class="day-panel active">
+      <ul class="task-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0 16px;">
+        <li class="task-item"><span class="task-icon">⬜</span><div><div class="task-text todo-text">실시간 부하 테스트 스크립트 (sendMethodCode=03)</div><div class="done-detail" style="color:var(--todo);">tests/load/realtime_load_test.py</div></div></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">기본 구성(TM×2) TPS 측정 — 목표 2,000 TPS↑</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">TaskManager 2→4 확장 후 TPS 재측정 — 1.7배↑ 검증</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">피크 5,000 TPS 투입 → Kafka 버퍼링 유실 0건 확인</span></li>
+      </ul>
+    </div>
+    <div id="d7b" class="day-panel">
+      <ul class="task-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0 16px;">
+        <li class="task-item"><span class="task-icon">⬜</span><div><div class="task-text todo-text">배치 부하 테스트 스크립트 (sendMethodCode=01·02)</div><div class="done-detail" style="color:var(--todo);">tests/load/batch_load_test.py</div></div></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">100만 건 배치 투입 → 처리 완료 시간 측정 (목표 15분↓)</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">예약 시각 정확도 검증 — ±60초 이내 99%↑</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">TM 4개 구성 배치 처리량 재측정</span></li>
+      </ul>
+    </div>
+    <div id="d7c" class="day-panel">
+      <ul class="task-list" style="display:grid;grid-template-columns:repeat(2,1fr);gap:0 16px;">
+        <li class="task-item"><span class="task-icon">⬜</span><div><div class="task-text todo-text">복합 시나리오 — 실시간 1,000 TPS + 배치 50만 건 동시</div><div class="done-detail" style="color:var(--todo);">tests/load/mixed_load_test.py</div></div></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">배치가 실시간 지연에 미치는 영향 측정 (±20% 이내)</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">Kafka 파티션 격리 효과 — 배치 포화 시 실시간 영향 없음</span></li>
+        <li class="task-item"><span class="task-icon">⬜</span><span class="task-text todo-text">최종 결과 정리 → AM_ARCHITECTURE.md 실측치 반영</span></li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<!-- 데모 가능 수준 -->
+<div class="demo-section">
+  <div class="section-title">▸ 현재 데모 가능 수준</div>
+  <div class="demo-grid">
+    <div>
+      <div class="demo-col-title yes">✅ 지금 바로 보여줄 수 있는 것</div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>Flink UI — Job 3개 RUNNING + 파이프라인 그래프</div><div class="demo-sub">http://localhost:8081</div></div></div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>Kafka UI — 토픽 10개 + 메시지 실시간 흐름 확인</div><div class="demo-sub">http://localhost:8989</div></div></div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>NiFi UI — 플로우 구성도 시각적 확인</div><div class="demo-sub">http://localhost:8080/nifi</div></div></div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>Adapter Health — 5개 채널 200 OK 확인</div><div class="demo-sub">http://localhost:8101~8105/health</div></div></div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>라이브 E2E — 메시지 투입 → DB DELIVERED (~30초)</div><div class="demo-sub">가장 임팩트 있는 라이브 데모 항목</div></div></div>
+      <div class="demo-item"><div class="demo-dot yes"></div><div><div>PostgreSQL 발송 이력 조회</div><div class="demo-sub">txId·channel·status·result_code·dispatched_at·delivered_at</div></div></div>
+    </div>
+    <div>
+      <div class="demo-col-title no">⬜ Day 5~7 완료 후 추가되는 것</div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>Grafana — 실시간 TPS·성공률 대시보드 (가장 임팩트↑)</div><div class="demo-sub">Day 5 완료 후 · http://localhost:3000</div></div></div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>VOC API — 전화번호로 발송 이력 즉시 조회</div><div class="demo-sub">Day 5 완료 후 · localhost:8200/api/v1/history/receiver/{phone}</div></div></div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>RCS → SMS fallback 자동 전환 라이브 시연</div><div class="demo-sub">Day 6 완료 후</div></div></div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>Retry·DLQ 자동 동작 시각화</div><div class="demo-sub">Day 6 완료 후</div></div></div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>TPS 성능 수치 — 2,000 TPS 달성 여부</div><div class="demo-sub">Day 7 완료 후 · 목표: 일 5,000만 건</div></div></div>
+      <div class="demo-item"><div class="demo-dot no"></div><div><div>Scale Out — TaskManager 2→4 시 1.7배 처리량 증가</div><div class="demo-sub">Day 7 완료 후</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(btn, panelId) {
+  const card = btn.closest('.day-card');
+  card.querySelectorAll('.day-tab').forEach(t => t.classList.remove('active'));
+  card.querySelectorAll('.day-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+}
+</script>
+</body>
+</html>

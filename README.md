@@ -38,9 +38,27 @@ am-platform/
 │   │   ├── send-request-flow.json   ← HTTP 수신 → 35자리 txId 생성 → Kafka 발행
 │   │   ├── send-result-flow.json    ← Kafka 구독 → txId 검증 → DB 업데이트
 │   │   └── README.md                ← NiFi 플로우 운영 가이드
-│   ├── flink/                       ← Day4: Flink Job 소스
+│   ├── flink/                       ← Day4: Flink Job 소스                     ← 🆕 하위 구조 추가 (GitHub 실제 파일 반영)
+│   │   ├── src/main/java/com/am/platform/
+│   │   │   ├── jobs/
+│   │   │   │   ├── SendRequestJob.java   ← 발송 요청 처리 (검증·분배·DB INSERT)
+│   │   │   │   ├── SendResultJob.java    ← 발송 결과 처리 (분류·DB UPDATE·집계)
+│   │   │   │   └── RetryJob.java         ← 재처리 (지수백오프·DLQ 분류)
+│   │   │   ├── operators/
+│   │   │   │   ├── ValidationOperator.java
+│   │   │   │   ├── ChannelDispatchOperator.java
+│   │   │   │   └── RateLimitOperator.java
+│   │   │   ├── model/
+│   │   │   │   ├── SendMessage.java
+│   │   │   │   └── SendResult.java
+│   │   │   └── util/
+│   │   │       ├── TxIdParser.java
+│   │   │       └── ResultCodeClassifier.java
+│   │   ├── src/main/resources/
+│   │   │   └── log4j2.properties
+│   │   └── pom.xml
 │   ├── services/                    ← Day3: Mock Adapter (SMS/MMS/RCS/FAX/Email)
-│   │   ├── base/                    ← 공통 모듈 (tx_id.py, kafka_client.py, adapter_base.py)
+│   │   ├── base/                    ← 공통 모듈 (tx_id.py, kafka_client.py, adapter_base.py, metrics_helper.py)  ← 🆕 metrics_helper.py 추가 (Day4 신규 생성)
 │   │   ├── sms-adapter/             ← 성공률 95%, 지연 50ms (main.py, Dockerfile)
 │   │   ├── mms-adapter/             ← 성공률 93%, 지연 80ms
 │   │   ├── rcs-adapter/             ← 성공률 90%, fallback→SMS (결과코드 50002)
@@ -102,7 +120,7 @@ am-platform/
 | 3 | MongoDB 초기화 스크립트 작성 (월별 컬렉션·인덱스, 샘플 도큐먼트) | `poc/init/init-mongo.js` | ✅ |
 | 4 | Kafka 토픽 초기화 스크립트 작성 (채널별 dispatch 토픽 포함 10개) | `poc/config/kafka-topics.sh` | ✅ |
 | 5 | Kafka Connector 설정 파일 작성 (JdbcSink, MongoSink) | `poc/config/kafka-connectors/` | ✅ |
-| 6 | 환경변수 설정 파일 작성 (`.env.example`) | `poc/docker/.env.example` | ✅ |
+| 6 | 환경변수 설정 파일 작성 (`.env.example`) | `poc/docker/.env.example` | ✅+ |
 | 7 | Prometheus / Grafana provisioning 설정 작성 | `poc/monitoring/` | ✅ |
 | 8 | 헬스체크 스크립트 작성 | `poc/docker/healthcheck.sh` | ✅ |
 | 9 | `.gitignore` 작성 | `.gitignore` | ✅ |
@@ -222,20 +240,80 @@ pip install -r poc/services/base/requirements.txt
 ---
 
 ### Day 4 — Flink Job 개발 (처리·분석 파이프라인)
+
 **상태: ✅ 완료**
-...
-| 1 | Flink 프로젝트 구조 초기화 (Maven/Gradle, 의존성 설정) | `poc/flink/` | ✅ |
-| 2 | 발송 요청 처리 Job ...  | ✅ |
-| 3 | Rate Limiting 로직 구현 ... | ✅ |
-| 4 | 발송 결과 처리 Job ... | ✅ |
-| 5 | 재처리(Retry) Job ... | ✅ |
-| 6 | Flink Job 배포 및 JobManager 등록 | Flink UI 확인 | ⬜ |  ← 로컬 실행 후 체크
+
+**목표:** Flink Job을 개발하여 발송 전 검증, 채널 분배, Rate Limiting, 성공률 집계를 구현한다.
+
+| # | 작업 항목 | 산출물 | 상태 |
+|---|---------|--------|------|
+| 1 | Flink 프로젝트 구조 초기화 (Maven 3.9, JDK 17, 의존성 설정) | `poc/flink/pom.xml` | ✅ |
+| 2 | 발송 요청 처리 Job (검증 → 채널 분배 → dispatch 토픽 발행 + DB INSERT) | `poc/flink/src/.../jobs/SendRequestJob.java` | ✅ |
+| 3 | Rate Limiting 로직 구현 (채널별 TPS 제어, KeyedProcessFunction) | `poc/flink/src/.../operators/RateLimitOperator.java` | ✅ |
+| 4 | 발송 결과 처리 Job (결과 분류·DB UPDATE·1분 집계→metrics 적재) | `poc/flink/src/.../jobs/SendResultJob.java` | ✅ |
+| 5 | 재처리(Retry) Job (retry 토픽 구독 → 지수 백오프 30s/60s/120s → 재발송 또는 DLQ) | `poc/flink/src/.../jobs/RetryJob.java` | ✅ |
+| 6 | Flink Job 배포 및 E2E 파이프라인 검증 | Flink UI 3개 Job RUNNING 확인 | ✅ |
 
 **Day 4 완료 기준:**
-- [ ] Flink UI: 3개 Job 모두 RUNNING 상태 확인
-- [ ] 테스트 메시지 10건 투입 → 처리 결과 DB 적재 확인
-- [ ] RCS 실패 시 SMS fallback 동작 확인
-- [ ] Rate Limiting: TPS 초과 시 메시지 지연 처리 확인
+- [x] Flink UI: 3개 Job 모두 RUNNING 상태 확인
+- [x] 테스트 메시지 투입 → 처리 결과 DB 적재 확인 (txId 기준 DISPATCHING → DELIVERED 검증)
+- [ ] RCS 실패 시 SMS fallback 동작 확인 ← Day 6 통합 테스트 시 검증 예정
+- [ ] Rate Limiting: TPS 초과 시 메시지 지연 처리 확인 ← Day 7 성능 테스트 시 검증 예정
+
+**⚠️ Day 4 트러블슈팅 이력 — 새 환경 작업 시 반드시 확인:**
+
+| # | 문제 | 원인 | 해결 방법 |
+|---|------|------|---------|
+| 1 | SendResultJob RESTARTING | PostgreSQL 비밀번호 하드코딩 불일치 | `.env` 기반 환경변수 주입 구조로 변경 (docker-compose.yml taskmanager 환경변수 추가) |
+| 2 | SendRequestJob RESTARTING | `setKafkaProducerConfig` 호출 시 JMX Producer ID 충돌 | `Properties` 객체 및 `.setKafkaProducerConfig()` 호출 전체 제거 |
+| 3 | RetryJob RESTARTING (1차) | 동일 JMX 충돌 | 동일하게 제거 |
+| 4 | RetryJob RESTARTING (2차) | `RetryEvent` 클래스 `Serializable` 미구현 → Checkpoint 직렬화 실패 | `implements java.io.Serializable` + `serialVersionUID = 1L` 추가 |
+| 5 | RetryJob RESTARTING (3차) | TaskManager 슬롯 2개로 Job 3개 실행 불가 | `docker-compose.yml` `taskmanager.numberOfTaskSlots: 2 → 6` |
+| 6 | Mock Adapter 전체 기동 실패 | Prometheus Counter 모듈 레벨 전역 선언 → uvicorn 재시작 시 CollectorRegistry 중복 등록 | `poc/services/base/metrics_helper.py` 신규 작성 (`get_or_create_counter/histogram`) + 5개 Adapter `sys.path.insert`를 `from base.metrics_helper import` 앞으로 이동 |
+| 7 | DB INSERT 없음 | `SendRequestJob`에 `buildPostgresSink()` 미구현 | `JdbcSink.sink()` INSERT 메서드 추가 |
+| 8 | SendResultJob Checkpoint 실패 | `Instant.parse()`가 `+09:00` 오프셋 형식 미지원 | `ZonedDateTime.parse(...).toInstant()` 로 변경 |
+| 9 | INSERT SQL 오류 | `msg_send_history.tx_id`에 UNIQUE 제약 없어 `ON CONFLICT` 사용 불가 | `ON CONFLICT (tx_id) DO NOTHING` 구문 제거 |
+| 10 | INSERT SQL 오류 | `msg_send_metrics` 테이블에 `success_rate` 컬럼 없음 | SQL을 실제 컬럼(`total_count`, `success_count`, `fail_count`) 기준으로 수정 |
+| 11 | status 항상 FAILED로 저장 | `disposition` 값이 `STORE`인데 `"DELIVERED"`와 비교 | `ResultCodeClassifier.isSuccess(resultCode)` 로직으로 변경 |
+
+**Day 4 Flink Job 재기동 절차 (재부팅 후):**
+
+```bash
+cd /c/project/CIMO_PoC/poc/flink
+
+# 1. jar 복사 (최초 1회 또는 jar 갱신 시)
+docker cp am-flink-fat.jar "am-flink-jobmanager:/tmp/am-flink-fat.jar"
+
+# 2. 기존 Job 전체 취소 (이미 실행 중인 경우)
+MSYS_NO_PATHCONV=1 docker exec am-flink-jobmanager bash -c "
+flink list | grep -oP '[a-f0-9]{32}' | while read id; do
+  flink cancel \$id
+done"
+
+# 3. TaskManager 재시작 후 Job 3개 submit
+docker restart docker-taskmanager-1
+sleep 15
+
+MSYS_NO_PATHCONV=1 docker exec am-flink-jobmanager flink run -d \
+  --class com.am.platform.jobs.SendRequestJob /tmp/am-flink-fat.jar
+MSYS_NO_PATHCONV=1 docker exec am-flink-jobmanager flink run -d \
+  --class com.am.platform.jobs.SendResultJob /tmp/am-flink-fat.jar
+MSYS_NO_PATHCONV=1 docker exec am-flink-jobmanager flink run -d \
+  --class com.am.platform.jobs.RetryJob /tmp/am-flink-fat.jar
+
+# 4. 상태 확인 (2분 후)
+sleep 120 && MSYS_NO_PATHCONV=1 docker exec am-flink-jobmanager flink list
+# 기대 결과: AM-SendRequestJob (RUNNING) / AM-SendResultJob (RUNNING) / AM-RetryJob (RUNNING)
+
+# 5. E2E 검증 (메시지 1건 투입 후 DB 확인)
+MSYS_NO_PATHCONV=1 docker exec am-kafka bash -c "
+echo '{\"txId\":\"00000000000010310600100000000000001\",\"channel\":\"SMS\",\"receiver\":\"01012345678\",\"sender\":\"0212345678\",\"messageBody\":\"테스트\",\"customerId\":\"CUST001\",\"status\":\"PENDING\",\"retryCount\":0}' \
+  | kafka-console-producer --bootstrap-server localhost:9092 --topic topic.send.request"
+
+sleep 60 && docker exec am-postgres psql -U am_user -d am_db -c \
+  "SELECT tx_id, channel, status, result_code FROM msg_send_history ORDER BY created_at DESC LIMIT 3;"
+# 기대 결과: status = DELIVERED, result_code = 10000
+```
 
 ---
 
@@ -342,7 +420,7 @@ pip install -r poc/services/base/requirements.txt
 | Day 1 | 아키텍처 구체화 및 작업 계획 수립 | ✅ 완료 | 2026-03-24 |
 | Day 2 | POC 기반 환경 구성 (Docker Compose + DB 초기화) | ✅ 완료 | 2026-03-25 |
 | Day 3 | Mock Adapter 개발 및 NiFi 플로우 구성 | ✅ 완료 | 2026-03-26 |
-| Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ✅ 완료 | 2026-04-07 |
+| Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ✅ 완료 | 2026-04-16 |
 | Day 5 | 모니터링 환경 구성 (Prometheus + Grafana) | ⬜ 미시작 | - |
 | Day 6 | 통합 테스트 및 파이프라인 정합성 검증 | ⬜ 미시작 | - |
 | Day 7 | 성능 테스트 (TPS, 지연시간, 확장성) | ⬜ 미시작 | - |
@@ -383,4 +461,4 @@ pip install -r poc/services/base/requirements.txt
 
 ---
 
-*최종 업데이트: 2026-04-07 | 다음 작업: Day 5 — 모니터링 환경 구성 (Prometheus + Grafana + VOC API)*
+*최종 업데이트: 2026-04-16 | 다음 작업: Day 5 — 모니터링 환경 구성 (Prometheus + Grafana + VOC API)*
