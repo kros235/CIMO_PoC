@@ -58,14 +58,30 @@ am-platform/
 │   │   │   └── log4j2.properties
 │   │   └── pom.xml
 │   ├── services/                    ← Day3: Mock Adapter (SMS/MMS/RCS/FAX/Email)
-│   │   ├── base/                    ← 공통 모듈 (tx_id.py, kafka_client.py, adapter_base.py, metrics_helper.py)  ← 🆕 metrics_helper.py 추가 (Day4 신규 생성)
-│   │   ├── sms-adapter/             ← 성공률 95%, 지연 50ms (main.py, Dockerfile)
-│   │   ├── mms-adapter/             ← 성공률 93%, 지연 80ms
-│   │   ├── rcs-adapter/             ← 성공률 90%, fallback→SMS (결과코드 50002)
-│   │   ├── fax-adapter/             ← 성공률 85%, 지연 200ms
-│   │   ├── email-adapter/           ← 성공률 98%, 지연 30ms
-│   │   └── test_adapters.sh         ← Day3 완료 기준 검증 스크립트
+│   │   ├── base/                    ← 공통 모듈 ...
+│   │   ├── sms-adapter/
+│   │   ├── mms-adapter/
+│   │   ├── rcs-adapter/
+│   │   ├── fax-adapter/
+│   │   ├── email-adapter/
+│   │   ├── test_adapters.sh
+│   │   └── history-api/             ← Day5: VOC 조회 API (포트 8200)  🆕
+│   │       ├── main.py              ← FastAPI 서버 (txId/수신번호/성공률/TPS)
+│   │       ├── requirements.txt
+│   │       ├── Dockerfile
+│   │       └── static/
+│   │           └── trace.html       ← E2E 파이프라인 구간별 시각화 UI
 │   └── monitoring/                  ← Day5: Prometheus + Grafana 설정
+│       ├── prometheus.yml           ← scrape 설정 (adapters/history-api/flink)
+│       ├── alert-rules.yml          ← 경보 규칙 3개 (성공률/Retry/DLQ)
+│       └── grafana/
+│           └── provisioning/
+│               ├── datasources/
+│               │   └── prometheus.yml  ← Prometheus + PostgreSQL 자동 등록
+│               └── dashboards/
+│                   ├── default.yml     ← 대시보드 프로비저닝 설정
+│                   └── json/
+│                       └── am-platform-dashboard.json  ← 발송 현황 대시보드
 └── tests/
     ├── load/                        ← Day6: 부하 테스트 스크립트
     └── validation/                  ← Day6: 정합성 검증 스크립트
@@ -319,24 +335,60 @@ sleep 60 && docker exec am-postgres psql -U am_user -d am_db -c \
 
 ### Day 5 — 모니터링 환경 구성 (Prometheus + Grafana)
 
-**상태: ⬜ 미시작**
+**상태: ✅ 완료**
 
 **목표:** Prometheus 메트릭 수집과 Grafana 대시보드를 구성하여 실시간 발송 현황을 시각화한다.
 
 | # | 작업 항목 | 산출물 | 상태 |
 |---|---------|--------|------|
-| 1 | Prometheus 설정 파일 작성 (각 서비스 scrape 설정) | `poc/monitoring/prometheus.yml` | ⬜ |
-| 2 | 각 Mock Adapter Prometheus 메트릭 엔드포인트 추가 | `/metrics` 엔드포인트 | ⬜ |
-| 3 | Grafana 데이터소스 설정 (Prometheus 연결) | `poc/monitoring/grafana/datasources/` | ⬜ |
-| 4 | Grafana 대시보드 구성 (TPS, 성공률, 재처리 현황, 파이프라인 지연) | `poc/monitoring/grafana/dashboards/` | ⬜ |
-| 5 | 이상징후 알림 규칙 설정 (성공률 95% 이하 경보) | `poc/monitoring/alert-rules.yml` | ⬜ |
-| 6 | VOC 조회 API 구현 (txId/수신번호 기준 이력 조회) | `poc/services/history-api/` | ⬜ |
+| 1 | Prometheus 설정 파일 작성 (adapters/history-api scrape, alert-rules 참조) | `poc/monitoring/prometheus.yml` | ✅ |
+| 2 | 각 Mock Adapter Prometheus 메트릭 수집 확인 (metrics_path: /metrics/) | `/metrics/` 엔드포인트 | ✅ |
+| 3 | Grafana 데이터소스 자동 프로비저닝 (Prometheus uid:prometheus + PostgreSQL uid:postgres) | `poc/monitoring/grafana/provisioning/datasources/` | ✅ |
+| 4 | Grafana 대시보드 4패널 구성 (TPS/성공률/재처리/지연) + 복합 검색 테이블 + E2E iframe | `poc/monitoring/grafana/provisioning/dashboards/` | ✅ |
+| 5 | 이상징후 알림 규칙 3개 (성공률 95%↓ / Retry 1000건↑ / DLQ 발생) | `poc/monitoring/alert-rules.yml` | ✅ |
+| 6 | VOC 조회 API 구현 (txId/수신번호/성공률/TPS 엔드포인트) | `poc/services/history-api/` | ✅ |
+| 7 | E2E 파이프라인 구간별 시각화 UI (trace.html + Grafana iframe 패널) | `poc/services/history-api/static/` | ✅ |
+| 8 | 발송 이력 복합 검색 (txId/수신번호/채널/상태/시작일시/종료일시 AND 조합) | Grafana 대시보드 Variable | ✅ |
+| 9 | docker-compose.monitoring.yml 신규 작성 (history-api + Grafana/Prometheus override) | `poc/docker/docker-compose.monitoring.yml` | ✅ |
 
 **Day 5 완료 기준:**
-- [ ] Grafana: `http://localhost:3000` — 4개 패널 대시보드 확인
-- [ ] 발송 TPS 실시간 그래프 표시 확인
-- [ ] 채널별 성공률 실시간 표시 확인
-- [ ] VOC API: `GET /api/v1/history/receiver/{phone}` 응답 3초 이내 확인
+- [x] Grafana: `http://localhost:3000` — 4개 패널 대시보드 확인
+- [x] 발송 TPS 실시간 그래프 표시 확인
+- [x] 채널별 성공률 실시간 표시 확인 (게이지 100% 녹색)
+- [x] VOC API: `GET /api/v1/history/receiver/{phone}` 응답 3초 이내 확인
+- [x] E2E 추적 UI: `http://localhost:8200/ui/trace.html` — 파이프라인 구간별 시각화 확인
+- [x] Grafana iframe 패널: txId 입력 시 파이프라인 그림 자동 갱신 확인
+- [x] 복합 검색: txId + 수신번호 + 채널 + 상태 + 시작/종료일시 AND 조합 검색 확인
+
+**⚠️ Day 5 트러블슈팅 이력 — 새 환경 작업 시 반드시 확인:**
+
+| # | 문제 | 원인 | 해결 방법 |
+|---|------|------|---------|
+| 1 | Grafana 대시보드 No results found | grafana/datasources/, grafana/dashboards/ 빈 폴더가 provisioning/ 올바른 경로를 덮어씀 | docker-compose.yml Grafana volumes를 `grafana/provisioning/datasources`, `grafana/provisioning/dashboards`로 수정 |
+| 2 | Grafana YAML parse 오류 (line 4) | docker-compose.yml grafana 서비스 들여쓰기 3칸 오류 | `   grafana:` → `  grafana:` (공백 2칸으로 수정) |
+| 3 | Datasource prometheus was not found | datasource uid 미지정으로 Grafana가 자동 생성한 uid(PBFA97...) ≠ 대시보드 JSON uid(prometheus) | datasources/prometheus.yml에 `uid: prometheus` 명시 |
+| 4 | /metrics 307 Redirect → Prometheus scrape 실패 | FastAPI StaticFiles가 /metrics → /metrics/ 리다이렉트 | prometheus.yml metrics_path를 `/metrics/`(trailing slash)로 변경 |
+| 5 | adapter_send_total 수집 0건 | 실제 메트릭명이 `am_sms_send_total` 등 채널별로 다름 | 대시보드 JSON PromQL을 실제 메트릭명으로 교체 |
+| 6 | 성공률 게이지 NaN | status 라벨 값이 `success`가 아닌 `DELIVERED` | 대시보드 JSON `status=\"success\"` → `status=\"DELIVERED\"` 수정 |
+| 7 | iframe 패널이 HTML 태그 문자열로 출력 | Grafana 10.x Text 패널 HTML 렌더링 기본 차단 | docker-compose.monitoring.yml에 `GF_PANELS_DISABLE_SANITIZE_HTML: "true"` 추가 |
+| 8 | 시작/종료일시 빈 값 시 SQL 오류 | `''::timestamptz` 빈 문자열 캐스팅 실패 | `NULLIF('${dateFrom}', '')` 로 빈 값을 NULL 처리 |
+
+**Day 5 기동 절차 (재부팅 후):**
+```bash
+# 인프라 + 모니터링 전체 기동
+docker compose \
+  -f poc/docker/docker-compose.yml \
+  -f poc/docker/docker-compose.monitoring.yml \
+  up -d
+
+# Adapter 기동
+docker compose -f poc/docker/docker-compose.adapters.yml up -d
+
+# 확인
+curl http://localhost:8200/health
+# http://localhost:3000/d/am-platform-v1
+# http://localhost:8200/ui/trace.html
+```
 
 ---
 
@@ -421,7 +473,7 @@ sleep 60 && docker exec am-postgres psql -U am_user -d am_db -c \
 | Day 2 | POC 기반 환경 구성 (Docker Compose + DB 초기화) | ✅ 완료 | 2026-03-25 |
 | Day 3 | Mock Adapter 개발 및 NiFi 플로우 구성 | ✅ 완료 | 2026-03-26 |
 | Day 4 | Flink Job 개발 (처리·분석 파이프라인) | ✅ 완료 | 2026-04-16 |
-| Day 5 | 모니터링 환경 구성 (Prometheus + Grafana) | ⬜ 미시작 | - |
+| Day 5 | 모니터링 환경 구성 (Prometheus + Grafana + VOC API) | ✅ 완료 | 2026-04-16 |
 | Day 6 | 통합 테스트 및 파이프라인 정합성 검증 | ⬜ 미시작 | - |
 | Day 7 | 성능 테스트 (TPS, 지연시간, 확장성) | ⬜ 미시작 | - |
 
@@ -461,4 +513,4 @@ sleep 60 && docker exec am-postgres psql -U am_user -d am_db -c \
 
 ---
 
-*최종 업데이트: 2026-04-16 | 다음 작업: Day 5 — 모니터링 환경 구성 (Prometheus + Grafana + VOC API)*
+*최종 업데이트: 2026-04-16 | 다음 작업: Day 6 — 통합 테스트 및 파이프라인 정합성 검증*
