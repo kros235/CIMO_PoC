@@ -1,0 +1,764 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(am_sms_send_total[1m])",
+          "legendFormat": "SMS",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(am_mms_send_total[1m])",
+          "legendFormat": "MMS",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(am_rcs_send_total[1m])",
+          "legendFormat": "RCS",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(am_fax_send_total[1m])",
+          "legendFormat": "FAX",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(am_email_send_total[1m])",
+          "legendFormat": "Email",
+          "refId": "E"
+        }
+      ],
+      "title": "채널별 발송 TPS (1분 평균)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.9
+              },
+              {
+                "color": "green",
+                "value": 0.95
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(am_sms_send_total{status=\"DELIVERED\"}[2m])) / sum(rate(am_sms_send_total[2m]))",
+          "legendFormat": "SMS",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(am_mms_send_total{status=\"DELIVERED\"}[2m])) / sum(rate(am_mms_send_total[2m]))",
+          "legendFormat": "MMS",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(am_rcs_send_total{status=\"DELIVERED\"}[2m])) / sum(rate(am_rcs_send_total[2m]))",
+          "legendFormat": "RCS",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(am_fax_send_total{status=\"DELIVERED\"}[2m])) / sum(rate(am_fax_send_total[2m]))",
+          "legendFormat": "FAX",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(am_email_send_total{status=\"DELIVERED\"}[2m])) / sum(rate(am_email_send_total[2m]))",
+          "legendFormat": "Email",
+          "refId": "E"
+        }
+      ],
+      "title": "채널별 발송 성공률 (2분 평균)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(am_sms_send_total{status=\"FAILED\"}) + sum(am_mms_send_total{status=\"FAILED\"}) + sum(am_rcs_send_total{status=\"FAILED\"}) + sum(am_fax_send_total{status=\"FAILED\"}) + sum(am_email_send_total{status=\"FAILED\"})",
+          "legendFormat": "실패 누적",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(am_rcs_fallback_total)",
+          "legendFormat": "RCS Fallback",
+          "refId": "B"
+        }
+      ],
+      "title": "재처리 현황 — 실패 누적 / RCS Fallback",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, rate(am_sms_send_duration_ms_bucket[2m]))",
+          "legendFormat": "SMS p95",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.50, rate(am_sms_send_duration_ms_bucket[2m]))",
+          "legendFormat": "SMS p50",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, rate(am_rcs_send_duration_ms_bucket[2m]))",
+          "legendFormat": "RCS p95",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, rate(am_fax_send_duration_ms_bucket[2m]))",
+          "legendFormat": "FAX p95",
+          "refId": "D"
+        }
+      ],
+      "title": "발송 지연 p50 / p95 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "DELIVERED": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "✓ DELIVERED"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "FAILED": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "✗ FAILED"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "DLQ": {
+                        "color": "orange",
+                        "index": 2,
+                        "text": "✗ DLQ"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "DISPATCHING": {
+                        "color": "yellow",
+                        "index": 3,
+                        "text": "→ DISPATCHING"
+                      }
+                    },
+                    "type": "value"
+                  },
+                  {
+                    "options": {
+                      "PENDING": {
+                        "color": "blue",
+                        "index": 4,
+                        "text": "○ PENDING"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pipeline"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 400
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tx_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 290
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "상세추적"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "auto",
+                  "wrapText": false
+                }
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "상세 추적 ↗",
+                    "url": "${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "elapsed"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "requested_at"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  tx_id,\n  channel,\n  receiver,\n  status,\n  result_code,\n  retry_count,\n  CASE\n    WHEN status = 'DELIVERED' THEN 'NiFi ✅  Kafka ✅  Flink ✅  Adapter ✅  결과수신 ✅  DB ✅'\n    WHEN status = 'FAILED' AND dispatched_at IS NULL THEN 'NiFi ✅  Kafka ✅  Flink ❌  Adapter ⬜  결과수신 ⬜  DB ⬜'\n    WHEN status = 'FAILED' AND dispatched_at IS NOT NULL THEN 'NiFi ✅  Kafka ✅  Flink ✅  Adapter ✅  결과수신 ❌  DB ⬜'\n    WHEN status = 'DLQ' THEN 'NiFi ✅  Kafka ✅  Flink ✅  Adapter ✅  결과수신 ❌  DB(DLQ) ✅'\n    WHEN status = 'DISPATCHING' THEN 'NiFi ✅  Kafka ✅  Flink ✅  Adapter 🔄  결과수신 ⬜  DB ⬜'\n    ELSE 'NiFi ✅  Kafka ✅  Flink 🔄  Adapter ⬜  결과수신 ⬜  DB ⬜'\n  END AS pipeline,\n  CASE\n    WHEN delivered_at IS NOT NULL AND requested_at IS NOT NULL\n    THEN ROUND(EXTRACT(EPOCH FROM (delivered_at - requested_at)) * 1000) || 'ms'\n    ELSE '-'\n  END AS elapsed,\n  CONCAT('http://localhost:8200/ui/trace.html?txId=', tx_id) AS \"상세추적\",\n  TO_CHAR(requested_at AT TIME ZONE 'Asia/Seoul', 'MM-DD HH24:MI:SS') AS requested_at\nFROM msg_send_history\nWHERE\n  ('${txId}' = '' OR tx_id = '${txId}')\n  AND ('${receiver}' = '' OR receiver = '${receiver}')\n  AND ('${channel}' = 'ALL' OR channel = '${channel}')\n  AND ('${status}' = 'ALL' OR status = '${status}')\n  AND (NULLIF('${dateFrom}', '') IS NULL OR requested_at >= NULLIF('${dateFrom}', '')::timestamptz)\n  AND (NULLIF('${dateTo}',   '') IS NULL OR requested_at <= NULLIF('${dateTo}',   '')::timestamptz)\nORDER BY requested_at DESC NULLS LAST\nLIMIT 100",
+          "refId": "A"
+        }
+      ],
+      "title": "📋 발송 이력 조회 — txId / 수신번호 / 채널 / 상태 / 기간 검색",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "postgres"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 6,
+      "options": {
+        "content": "<div style=\"width:100%;height:520px;background:#0d1117;border-radius:8px;overflow:hidden\">\n  <iframe\n    id=\"trace-frame\"\n    src=\"http://localhost:8200/ui/trace.html?mode=iframe&txId=${txId}\"\n    style=\"width:100%;height:100%;border:none;background:#0d1117\"\n    onload=\"this.style.opacity=1\"\n  ></iframe>\n</div>\n<style>\n  #trace-frame { opacity: 0; transition: opacity .3s; }\n</style>",
+        "mode": "html"
+      },
+      "pluginVersion": "10.0.3",
+      "title": "🔍 E2E 파이프라인 구간별 시각화 — txId 변수 입력 시 자동 갱신",
+      "type": "text"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": [
+    "am-platform",
+    "messaging"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "description": "35자리 트랜잭션 ID",
+        "hide": 0,
+        "label": "txId",
+        "name": "txId",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "description": "수신 전화번호",
+        "hide": 0,
+        "label": "수신번호",
+        "name": "receiver",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "ALL",
+          "value": "ALL"
+        },
+        "description": "발송 채널",
+        "hide": 0,
+        "label": "채널",
+        "name": "channel",
+        "options": [
+          {
+            "selected": true,
+            "text": "ALL",
+            "value": "ALL"
+          },
+          {
+            "selected": false,
+            "text": "SMS",
+            "value": "SMS"
+          },
+          {
+            "selected": false,
+            "text": "MMS",
+            "value": "MMS"
+          },
+          {
+            "selected": false,
+            "text": "RCS",
+            "value": "RCS"
+          },
+          {
+            "selected": false,
+            "text": "FAX",
+            "value": "FAX"
+          },
+          {
+            "selected": false,
+            "text": "EMAIL",
+            "value": "EMAIL"
+          }
+        ],
+        "query": "ALL,SMS,MMS,RCS,FAX,EMAIL",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "ALL",
+          "value": "ALL"
+        },
+        "description": "발송 상태",
+        "hide": 0,
+        "label": "상태",
+        "name": "status",
+        "options": [
+          {
+            "selected": true,
+            "text": "ALL",
+            "value": "ALL"
+          },
+          {
+            "selected": false,
+            "text": "DELIVERED",
+            "value": "DELIVERED"
+          },
+          {
+            "selected": false,
+            "text": "FAILED",
+            "value": "FAILED"
+          },
+          {
+            "selected": false,
+            "text": "DLQ",
+            "value": "DLQ"
+          },
+          {
+            "selected": false,
+            "text": "DISPATCHING",
+            "value": "DISPATCHING"
+          },
+          {
+            "selected": false,
+            "text": "PENDING",
+            "value": "PENDING"
+          }
+        ],
+        "query": "ALL,DELIVERED,FAILED,DLQ,DISPATCHING,PENDING",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "description": "시작 일시 입력 형식: YYYY-MM-DD HH:MI:SS (예: 2026-04-16 06:00:00) | 비워두면 전체 기간 조회",
+        "hide": 0,
+        "label": "시작일시",
+        "name": "dateFrom",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        },
+        "description": "종료 일시 입력 형식: YYYY-MM-DD HH:MI:SS (예: 2026-04-16 23:59:59) | 비워두면 현재 시각까지",
+        "hide": 0,
+        "label": "종료일시",
+        "name": "dateTo",
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "query": "",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Asia/Seoul",
+  "title": "AM Platform — 발송 현황 대시보드",
+  "uid": "am-platform-v1",
+  "version": 6
+}

@@ -2,6 +2,13 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# ─────────────────────────────────────────────────
+# [추가] alert-rules.yml 파일 참조 — 이 줄이 없으면
+#        아래에서 만드는 alert-rules.yml을 읽지 않음
+# ─────────────────────────────────────────────────
+rule_files:
+  - "/etc/prometheus/alert-rules.yml"
+
 scrape_configs:
   - job_name: "prometheus"
     static_configs:
@@ -16,11 +23,16 @@ scrape_configs:
       - targets: ["jobmanager:9249", "taskmanager:9249"] 
         
   - job_name: "adapters"
-    metrics_path: "/metrics"
+    metrics_path: "/metrics/"
     static_configs:
-      - targets: 
+      - targets:
         - "sms-adapter:8101"
         - "mms-adapter:8102"
         - "rcs-adapter:8103"
         - "fax-adapter:8104"
         - "email-adapter:8105"
+
+  - job_name: "history-api"
+    metrics_path: "/metrics/"
+    static_configs:
+      - targets: ["history-api:8200"]

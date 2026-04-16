@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AM Platform — E2E 발송 이력 추적</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1117;color:#e6edf3;min-height:100vh;padding:20px}
+  .header{margin-bottom:20px}
+  .badge{display:inline-block;font-size:10px;font-family:monospace;background:#1c2128;border:1px solid #30363d;border-radius:4px;padding:2px 8px;color:#8b949e;margin-bottom:6px}
+  h1{font-size:18px;font-weight:600;margin-bottom:3px}
+  .sub{font-size:12px;color:#8b949e}
+  .search-box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 18px;margin-bottom:16px}
+  .search-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .search-row:last-child{margin-bottom:0}
+  .search-row input{flex:1;min-width:180px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:13px;font-family:monospace;padding:7px 10px;outline:none;transition:border-color .2s}
+  .search-row input:focus{border-color:#388bfd}
+  .btn{background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:500;cursor:pointer;transition:background .15s;white-space:nowrap}
+  .btn:hover{background:#388bfd}
+  .btn-sec{background:#1c2128;border:1px solid #30363d;color:#e6edf3}
+  .btn-sec:hover{border-color:#8b949e;background:#21262d}
+  .divider{text-align:center;font-size:11px;color:#484f58;margin:8px 0}
+  .result-area{display:none}
+  .result-area.visible{display:block}
+  .meta-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 18px;margin-bottom:14px}
+  .meta-title{font-size:10px;font-family:monospace;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em}
+  .meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px 14px}
+  .meta-key{font-size:10px;color:#8b949e;margin-bottom:1px}
+  .meta-val{font-size:12px;font-family:monospace;word-break:break-all}
+  .s-badge{display:inline-block;font-size:10px;font-family:monospace;padding:2px 7px;border-radius:3px;font-weight:600}
+  .s-DELIVERED{background:#1a3f1a;color:#3fb950;border:1px solid #2ea043}
+  .s-FAILED{background:#3d1818;color:#f85149;border:1px solid #da3633}
+  .s-DLQ{background:#3d1818;color:#ff7b72;border:1px solid #da3633}
+  .s-RETRY{background:#3d2c00;color:#e3b341;border:1px solid #bb8009}
+  .s-PENDING,.s-DISPATCHING{background:#1c2128;color:#8b949e;border:1px solid #30363d}
+
+  /* ── 파이프라인 ── */
+  .pipeline-section{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 18px;margin-bottom:14px}
+  .pipeline-title{font-size:10px;font-family:monospace;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px}
+  .pipeline-track{display:flex;align-items:flex-start;overflow-x:auto;padding-bottom:4px}
+  .stage-wrap{display:flex;align-items:center}
+  .stage{display:flex;flex-direction:column;align-items:center;width:100px;flex-shrink:0}
+  .stage-box{width:82px;border-radius:8px;border:1.5px solid;padding:9px 5px;text-align:center;cursor:pointer;transition:transform .15s,box-shadow .15s}
+  .stage-box:hover{transform:translateY(-2px)}
+  .stage-box.success{background:#1a3f1a;border-color:#2ea043}
+  .stage-box.pending{background:#1c2128;border-color:#30363d}
+  .stage-box.error{background:#3d1818;border-color:#da3633;animation:pulse-err 1.5s ease-in-out infinite}
+  @keyframes pulse-err{0%,100%{box-shadow:0 0 0 0 rgba(218,54,51,0)}50%{box-shadow:0 0 0 5px rgba(218,54,51,.2)}}
+  .stage-icon{font-size:16px;margin-bottom:3px}
+  .stage-name{font-size:10px;font-weight:600}
+  .stage-box.success .stage-name{color:#3fb950}
+  .stage-box.pending .stage-name{color:#484f58}
+  .stage-box.error .stage-name{color:#f85149}
+  .stage-lbl{font-size:9px;font-family:monospace;margin-top:3px;padding:1px 5px;border-radius:3px}
+  .stage-box.success .stage-lbl{background:#1a3f1a;color:#3fb950}
+  .stage-box.pending .stage-lbl{background:#1c2128;color:#484f58}
+  .stage-box.error .stage-lbl{background:#3d1818;color:#f85149}
+  .stage-arrow{width:18px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding-bottom:20px;color:#30363d;font-size:14px}
+  .stage-arrow.success{color:#2ea043}
+  .stage-arrow.error{color:#da3633}
+
+  /* ── 에러 로그 ── */
+  .error-panel{background:#2d1414;border:1px solid #da3633;border-radius:8px;padding:12px 16px;margin-top:12px;display:none}
+  .error-panel.visible{display:block}
+  .error-title{font-size:10px;font-family:monospace;color:#f85149;margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em}
+  .error-body{font-size:11px;font-family:monospace;color:#ffa198;line-height:1.6;background:#3d1818;border-radius:4px;padding:8px 10px;word-break:break-all}
+
+  /* ── 이력 목록 ── */
+  .history-list{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:14px;overflow:hidden}
+  .history-header{font-size:10px;font-family:monospace;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;padding:10px 16px;border-bottom:1px solid #21262d}
+  .history-item{display:grid;grid-template-columns:1fr 60px 100px 70px 130px 80px;gap:8px;align-items:center;padding:9px 16px;border-top:1px solid #21262d;cursor:pointer;transition:background .1s;font-size:11px}
+  .history-item:first-of-type{border-top:none}
+  .history-item:hover{background:#1c2128}
+  .hi-txid{font-family:monospace;color:#79c0ff;font-size:10px}
+  .hi-ch{font-family:monospace;color:#79c0ff}
+  .hi-time{color:#8b949e}
+  .hi-link{background:#1f6feb;color:#fff;border:none;border-radius:4px;padding:3px 8px;font-size:10px;cursor:pointer;white-space:nowrap}
+  .hi-link:hover{background:#388bfd}
+
+  .err-msg{background:#2d1414;border:1px solid #da3633;border-radius:8px;padding:12px 16px;color:#f85149;font-size:12px;margin-bottom:14px;display:none}
+  .err-msg.visible{display:block}
+  .loading{color:#8b949e;font-size:12px;padding:16px 0;display:none;font-family:monospace}
+  .loading.visible{display:block}
+  .elapsed{font-size:10px;font-family:monospace;color:#484f58;margin-top:6px}
+
+  /* iframe 모드 (Grafana에서 열릴 때) */
+  body.iframe-mode{padding:10px;background:#111318}
+  body.iframe-mode .header{display:none}
+  body.iframe-mode .search-box{display:none}
+  body.iframe-mode .result-area{display:block}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="badge">AM PLATFORM · E2E 이력 추적</div>
+  <h1>발송 이력 추적 — 파이프라인 구간별 시각화</h1>
+  <p class="sub">txId(35자리) 또는 수신번호로 전 구간 발송 현황과 에러 위치를 확인합니다.</p>
+</div>
+
+<div class="search-box">
+  <div class="search-row">
+    <input type="text" id="input-txid" placeholder="txId 35자리 (예: 00000000000010310600100000000000001)" maxlength="35">
+    <button class="btn" onclick="searchByTx()">txId 조회</button>
+  </div>
+  <div class="divider">— 또는 —</div>
+  <div class="search-row">
+    <input type="text" id="input-phone" placeholder="수신번호 (예: 01012345678)">
+    <button class="btn btn-sec" onclick="searchByPhone()">번호 조회</button>
+  </div>
+</div>
+
+<div class="loading" id="loading">조회 중...</div>
+<div class="err-msg" id="err-msg"></div>
+
+<div class="result-area" id="result-tx">
+  <div class="meta-card" id="meta-card"></div>
+  <div class="pipeline-section">
+    <div class="pipeline-title">E2E 파이프라인 구간별 상태 (구간 클릭 시 상세 로그)</div>
+    <div class="pipeline-track" id="pipeline-track"></div>
+    <div class="error-panel" id="error-panel">
+      <div class="error-title">에러 로그</div>
+      <div class="error-body" id="error-body"></div>
+    </div>
+    <div class="elapsed" id="elapsed"></div>
+  </div>
+</div>
+
+<div class="result-area" id="result-phone">
+  <div class="history-list" id="history-list"></div>
+</div>
+
+<script>
+const API = location.origin;
+const params = new URLSearchParams(location.search);
+const iframeMode = params.get('mode') === 'iframe';
+
+if (iframeMode) document.body.classList.add('iframe-mode');
+
+function show(id){ document.getElementById(id).classList.add('visible') }
+function hide(id){ document.getElementById(id).classList.remove('visible') }
+function setText(id,t){ document.getElementById(id).innerHTML = t }
+
+function statusBadge(s){
+  const map={DELIVERED:'성공 ✓',FAILED:'실패 ✗',DLQ:'DLQ ✗',RETRY:'재시도',PENDING:'대기',DISPATCHING:'발송중'};
+  return `<span class="s-badge s-${s}">${map[s]||s}</span>`;
+}
+function fmtTime(iso){
+  if(!iso) return '—';
+  return new Date(iso).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+async function searchByTx(){
+  const txId = document.getElementById('input-txid').value.trim();
+  if(txId.length !== 35){ alert('txId는 35자리여야 합니다.'); return; }
+  hide('result-tx'); hide('result-phone'); hide('err-msg');
+  show('loading');
+  try{
+    const res = await fetch(`${API}/api/v1/history/tx/${txId}`);
+    if(res.status===404) throw new Error(`txId [${txId}] 이력 없음`);
+    if(!res.ok) throw new Error(`서버 오류 (${res.status})`);
+    renderTx(await res.json());
+  } catch(e){
+    setText('err-msg', e.message); show('err-msg');
+  } finally { hide('loading'); }
+}
+
+async function searchByPhone(){
+  const phone = document.getElementById('input-phone').value.trim();
+  if(!phone){ alert('수신번호를 입력하세요.'); return; }
+  hide('result-tx'); hide('result-phone'); hide('err-msg');
+  show('loading');
+  try{
+    const res = await fetch(`${API}/api/v1/history/receiver/${phone}?limit=20`);
+    if(!res.ok) throw new Error(`서버 오류 (${res.status})`);
+    renderPhone(await res.json(), phone);
+  } catch(e){
+    setText('err-msg', e.message); show('err-msg');
+  } finally { hide('loading'); }
+}
+
+function renderTx(data){
+  setText('meta-card', `
+    <div class="meta-title">발송 건 기본 정보</div>
+    <div class="meta-grid">
+      <div><div class="meta-key">txId</div><div class="meta-val">${data.tx_id||'—'}</div></div>
+      <div><div class="meta-key">채널</div><div class="meta-val">${data.channel||'—'}</div></div>
+      <div><div class="meta-key">상태</div><div class="meta-val">${statusBadge(data.status)}</div></div>
+      <div><div class="meta-key">결과 코드</div><div class="meta-val">${data.result_code||'—'}</div></div>
+      <div><div class="meta-key">수신번호</div><div class="meta-val">${data.receiver||'—'}</div></div>
+      <div><div class="meta-key">발신번호</div><div class="meta-val">${data.sender||'—'}</div></div>
+      <div><div class="meta-key">요청 시각</div><div class="meta-val">${fmtTime(data.requested_at)}</div></div>
+      <div><div class="meta-key">발송 시각</div><div class="meta-val">${fmtTime(data.dispatched_at)}</div></div>
+      <div><div class="meta-key">완료 시각</div><div class="meta-val">${fmtTime(data.delivered_at)}</div></div>
+      <div><div class="meta-key">재시도 횟수</div><div class="meta-val">${data.retry_count??'—'}</div></div>
+    </div>`);
+
+  const stages = data.pipeline_stages || [];
+  let pipeHtml = '';
+  let errorLog = null;
+
+  stages.forEach((s,i) => {
+    const arrowCls = s.status==='error' ? 'error' : s.status==='success' ? 'success' : '';
+    const lbl = s.status==='success' ? '✓ 통과' : s.status==='error' ? '✗ 오류' : '○ 미도달';
+    pipeHtml += `
+      <div class="stage-wrap">
+        <div class="stage">
+          <div class="stage-box ${s.status}" onclick="toggleLog(${i})" title="클릭하여 로그 확인">
+            <div class="stage-icon">${s.icon}</div>
+            <div class="stage-name">${s.label}</div>
+            <div class="stage-lbl">${lbl}</div>
+          </div>
+        </div>
+        ${i<stages.length-1 ? `<div class="stage-arrow ${arrowCls}">→</div>` : ''}
+      </div>`;
+    if(s.error_log) errorLog = s;
+  });
+
+  window._stages = stages;
+  setText('pipeline-track', pipeHtml);
+
+  if(errorLog){
+    setText('error-body',
+      `[ERROR] 구간: ${errorLog.label}\n${errorLog.error_log}\n\n` +
+      `txId: ${data.tx_id}\n채널: ${data.channel}\n결과코드: ${data.result_code||'없음'}\n` +
+      `요청시각: ${fmtTime(data.requested_at)}\n발송시각: ${fmtTime(data.dispatched_at)||'미도달'}`);
+    show('error-panel');
+  } else {
+    hide('error-panel');
+  }
+  setText('elapsed', `조회 응답시간: ${data.query_elapsed_ms}ms`);
+  show('result-tx');
+}
+
+function toggleLog(idx){
+  const s = window._stages && window._stages[idx];
+  if(!s) return;
+  const panel = document.getElementById('error-panel');
+  const body  = document.getElementById('error-body');
+  const logText = s.error_log
+    ? `[ERROR] 구간: ${s.label}\n${s.error_log}`
+    : `[OK] 구간: ${s.label} — 정상 통과`;
+  body.textContent = logText;
+  panel.classList.add('visible');
+  panel.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function renderPhone(data, phone){
+  if(!data.items||data.items.length===0){
+    setText('err-msg',`[${phone}] 발송 이력 없음`); show('err-msg'); return;
+  }
+  let html = `<div class="history-header">${phone} — 최근 ${data.total}건 (${data.items.length}건 표시)</div>`;
+  data.items.forEach(item => {
+    const traceUrl = `${location.origin}/ui/trace.html?txId=${item.tx_id}`;
+    html += `
+      <div class="history-item" onclick="loadTx('${item.tx_id}')">
+        <div class="hi-txid">${item.tx_id}</div>
+        <div class="hi-ch">${item.channel}</div>
+        <div>${statusBadge(item.status)}</div>
+        <div style="font-size:10px;font-family:monospace;color:#8b949e">${item.result_code||'—'}</div>
+        <div class="hi-time">${fmtTime(item.requested_at)}</div>
+        <button class="hi-link" onclick="event.stopPropagation();window.open('${traceUrl}','_blank')">새탭 추적 ↗</button>
+      </div>`;
+  });
+  setText('history-list', html);
+  show('result-phone');
+}
+
+function loadTx(txId){
+  document.getElementById('input-txid').value = txId;
+  searchByTx();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// URL 파라미터 자동 실행 (방식 1: 새탭, 방식 2: iframe)
+window.addEventListener('DOMContentLoaded', () => {
+  const txId = params.get('txId');
+  if(txId){
+    document.getElementById('input-txid').value = txId;
+    searchByTx();
+  }
+  const phone = params.get('phone');
+  if(phone){
+    document.getElementById('input-phone').value = phone;
+    searchByPhone();
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+
+  # ── VOC / History API ────────────────────────────────────
+  history-api:
+    build:
+      context: ./poc/services/history-api
+    container_name: am-history-api
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: am_db
+      POSTGRES_USER: am_user
+      POSTGRES_PASSWORD: am_password
+    depends_on:
+      - postgres
+    networks:
+      - am-network
+
+  # ── Grafana: 프로비저닝 볼륨 추가 ────────────────────────
+  # 기존 grafana 서비스에 볼륨만 추가 (override)
+  grafana:
+    volumes:
+      - ./poc/monitoring/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/am-platform-dashboard.json
+
+  # ── Prometheus: alert rules 볼륨 추가 ────────────────────
+  prometheus:
+    volumes:
+      - ./poc/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./poc/monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+
+networks:
+  am-network:
+    external: true
+    name: docker_am-network

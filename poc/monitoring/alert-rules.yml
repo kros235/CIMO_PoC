@@ -1,0 +1,42 @@
+groups:
+  - name: am-platform-alerts
+    interval: 30s
+    rules:
+
+      # ── 채널별 발송 성공률 95% 이하 경보 ──────────────────
+      # adapter_send_total, adapter_send_success_total 은
+      # 각 Mock Adapter의 /metrics 에서 수집됨
+      - alert: LowSuccessRate
+        expr: |
+          (
+            sum by (channel) (rate(adapter_send_success_total[2m]))
+            /
+            sum by (channel) (rate(adapter_send_total[2m]))
+          ) < 0.95
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "채널 {{ $labels.channel }} 발송 성공률 저하"
+          description: "최근 2분 성공률 {{ $value | humanizePercentage }} — 임계치 95% 미달"
+
+      # ── Retry 토픽 메시지 누적 경보 ──────────────────────
+      # Flink RetryJob 이 처리 중인 retry 건수를 메트릭으로 노출
+      - alert: RetryTopicBacklog
+        expr: adapter_retry_queue_size > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Retry 대기 메시지 누적"
+          description: "Retry 큐 {{ $value }}건 — 처리 지연 가능성"
+
+      # ── DLQ 메시지 발생 경보 ─────────────────────────────
+      - alert: DLQMessageReceived
+        expr: increase(adapter_dlq_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DLQ 메시지 발생"
+          description: "최근 5분간 DLQ {{ $value }}건 적재 — 영구 실패 확인 필요"

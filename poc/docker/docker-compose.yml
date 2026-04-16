@@ -141,8 +141,8 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASS:-admin}
     volumes:
-      - ../monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-      - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ../monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ../monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
     networks:
       - am-network
 

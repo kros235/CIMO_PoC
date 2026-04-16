@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+
+  # ── VOC / History API ────────────────────────────────────
+  history-api:
+    build:
+      context: ../services/history-api
+    container_name: am-history-api
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-am_db}
+      POSTGRES_USER: ${POSTGRES_USER:-am_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-am_password}
+    depends_on:
+      - postgres
+    networks:
+      - am-network
+
+  # ── Grafana: provisioning 볼륨 추가 (override) ──────────
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: am-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASS:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/am-platform-dashboard.json
+      GF_PANELS_DISABLE_SANITIZE_HTML: "true"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - am-network
+
+  # ── Prometheus: alert rules 볼륨 추가 (override) ────────
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: am-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    networks:
+      - am-network
+
+networks:
+  am-network:
+    external: true
+    name: docker_am-network
