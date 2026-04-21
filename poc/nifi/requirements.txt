@@ -1,0 +1,5 @@
+# poc/nifi/requirements.txt
+# Dependencies for NiFi flow auto-deployment script (deploy_flow.py)
+# Usage: python -m pip install -r poc/nifi/requirements.txt
+
+requests>=2.31.0

@@ -73,6 +73,7 @@ services:
     container_name: am-nifi
     ports:
       - "8080:8080"
+      - "8090:8090"    # ⭐️ 발송 요청 HTTP 수신 (ListenHTTP Processor)
     environment:
       - NIFI_WEB_HTTP_PORT=8080
       - NIFI_WEB_HTTP_HOST=0.0.0.0
