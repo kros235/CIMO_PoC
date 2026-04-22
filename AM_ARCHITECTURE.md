@@ -2,9 +2,10 @@
 
 ### MIMO·CI 통합 AM을 통한 초대용량 발송 플랫폼 고도화
 
-> **문서 버전:** v0.2 (초안 → 구체화)
+> **문서 버전:** v0.3 (POC 구축 실측 반영)
 > **최초 작성일:** 2026-03-24
-> **상태:** POC 진행 중
+> **최종 수정일:** 2026-04-22
+> **상태:** POC Day 5 완료 (Day 6 통합 테스트 진행 중)
 
 ---
 
@@ -21,10 +22,11 @@
 9. [POC 환경 구성 계획](#9-poc-환경-구성-계획)
 10. [데이터 모델 설계](#10-데이터-모델-설계)
 11. [장애 시나리오 및 대응 설계](#11-장애-시나리오-및-대응-설계)
-12. ⭐ [발송 방식 및 트랜잭션 ID 구조](#12-발송-방식-및-트랜잭션-id-구조) ← **신규 추가**
-13. ⭐ [AS-IS 연동 구조 상세](#13-as-is-연동-구조-상세) ← **신규 추가**
-14. ⭐ [MongoDB 고객 발송 이력 적재 구조](#14-mongodb-고객-발송-이력-적재-구조) ← **신규 추가**
-15. ⭐ [RDBMS 선택 분석 — PostgreSQL vs TiberoDB](#15-rdbms-선택-분석--postgresql-vs-tiberodb) ← **신규 추가**
+12. [발송 방식 및 트랜잭션 ID 구조](#12-발송-방식-및-트랜잭션-id-구조)
+13. [AS-IS 연동 구조 상세](#13-as-is-연동-구조-상세)
+14. [MongoDB 고객 발송 이력 적재 구조](#14-mongodb-고객-발송-이력-적재-구조)
+15. [RDBMS 선택 분석 — PostgreSQL vs TiberoDB](#15-rdbms-선택-분석--postgresql-vs-tiberodb)
+16. ⭐ [POC 구축 실측 결과 및 설계 피드백](#16-poc-구축-실측-결과-및-설계-피드백) ← **v0.3 신규 추가**
 
 ---
 
@@ -116,8 +118,12 @@ AM 아키텍처는 **코어 영역**과 **비즈니스 영역**을 명확히 분
 | 역할 | 데이터 수집 / 라우팅 / 추적 | 메시지 버퍼링 / 전달 | 데이터 처리 / 분석 |
 | 핵심 기능 | 대부분의 시스템과 즉시 연결 가능, 데이터 흐름 경로 자동 추적 | 대량 메시지 순서 대기 처리, 시스템 장애 시에도 데이터 유실 방지 | 실시간·일괄 처리 동시 지원, 중복·누락 없는 정확한 1회 처리 보장 |
 | AM 내 역할 | 발송 요청/결과 수집, 트랜잭션 ID 추적 시작 | 피크 트래픽 버퍼링, 속도 차이 흡수 | Rate Limiting, 성공률 집계, 실패 패턴 분석 |
-| POC 버전 | 2.0.x | 3.6.x | 1.18.x |
-| 포트 | 8080 (UI), 9090 (API) | 9092 (Broker), 2181 (ZooKeeper) | 8081 (UI), 6123 (RPC) |
+| POC 버전 | **2.0** (실측: 컨테이너 이미지 `apache/nifi:1.23.2` 기반으로 조정) | 3.6.x | 1.18.x |
+| 포트 | 8080 (Web UI / REST API) | 9092 (외부 Broker), 29092 (내부 Broker), 2181 (ZooKeeper) | 8081 (Web UI), 6123 (RPC) |
+
+> **v0.3 수정:** NiFi 포트 표기에서 `9090 (API)`는 Prometheus 포트(9090)와 혼동되어 삭제.  
+> NiFi는 8080 단일 포트로 Web UI와 REST API를 모두 제공한다.  
+> Kafka는 외부 접근용(9092)과 Docker 내부 통신용(29092)을 분리 운영한다.
 
 ### 3.2 3종 조합이 필요한 이유
 
@@ -311,6 +317,8 @@ AM 플랫폼은 Kafka를 **producer/consumer 직접 코딩 방식이 아닌 Kafk
 
 ### 4.5 Kafka 토픽 설계
 
+> **v0.3 업데이트:** Day 5 완료 시점 기준 운영 토픽은 **11개**. 초안의 10개 토픽에 Day 7 성능 테스트 대비 배치 토픽(`topic.send.batch`)이 추가되었다.
+
 | 토픽명 | 파티션 수 | Retention | 연결 Connector | 설명 |
 |--------|---------|-----------|--------------|------|
 | `topic.send.request` | 12 | 24h | NiFiKafkaSink → FlinkKafkaSource | 발송 요청 수신 |
@@ -322,6 +330,7 @@ AM 플랫폼은 Kafka를 **producer/consumer 직접 코딩 방식이 아닌 Kafk
 | `topic.send.result` | 12 | 48h | AdapterKafkaSink → JdbcSink/MongoSink | 발송 결과 수신 |
 | `topic.send.retry` | 6 | 72h | Flink RetryJob Source | 재처리 대상 |
 | `topic.send.dlq` | 3 | 7d | - (수동 확인용) | Dead Letter Queue (최종 실패) |
+| `topic.send.batch` ⭐ | 3 | 24h | Flink BatchJob Source | **v0.3 신규: 배치성 발송 전용 (Day 7 성능 테스트)** |
 | `topic.monitor.metrics` | 3 | 1h | PrometheusMetricsSink | 실시간 지표 스트리밍 |
 
 ### 4.6 재처리(Retry) 정책
@@ -413,27 +422,35 @@ AM 플랫폼은 Kafka를 **producer/consumer 직접 코딩 방식이 아닌 Kafk
 
 ### 6.2 서비스 목록 및 역할
 
-| 서비스명 | 역할 | 기술 스택 | POC 레플리카 수 |
-|---------|------|---------|--------------|
-| `nifi` | `poc-nifi` | 데이터 수집·라우팅·추적 | Apache NiFi 2.0 | 1 |
-| `kafka` | `poc-kafka` | 메시지 버퍼링 | Apache Kafka 3.6 + ZooKeeper | 1 |
-| `flink-jobmanager` | `poc-jobmanager` | Flink 마스터 로드. 분산 처리 작업의 스케줄링 및 체크포인트 관리 수행 | Apache Flink 1.18 | 1 |
-| `flink-taskmanager` | `docker-taskmanager-N` | Flink 워커 노드. 메시지 검증, 양식 변환, Rate limit 등 실제 연산 수행 | Apache Flink 1.18 | 2 (확장 테스트 시 4) |
-| `sms-adapter` | `poc-sms-adapter` | SMS Mock 발송 | Python FastAPI | 2 |
-| `mms-adapter` | `poc-mms-adapter` | MMS Mock 발송 | Python FastAPI | 2 |
-| `rcs-adapter` | `poc-rcs-adapter` | RCS Mock 발송 | Python FastAPI | 1 |
-| `fax-adapter` | `poc-fax-adapter` | FAX Mock 발송 | Python FastAPI | 1 |
-| `email-adapter` | `poc-email-adapter` | Email Mock 발송 | Python FastAPI | 1 |
-| `postgres` | `poc-postgres` | 발송 이력 및 통계 RDBMS | PostgreSQL 15 | 1 |
-| `mongodb` | `poc-mongodb` | 월별 이력 보관 NoSQL | MongoDB 6.0 | 1 |
-| `prometheus` | `poc-prometheus` | 메트릭 수집 | Prometheus 2.x | 1 |
-| `grafana` | `poc-grafana` | 시각화 대시보드 | Grafana 10.x | 1 |
+> **v0.3 업데이트:** Day 5 완료 시점 기준 실제 운영 중인 서비스 16개로 갱신.  
+> Day 5 신규 추가된 `history-api`(VOC 조회 API)와 `kafka-ui`(Kafka 웹 UI) 포함.  
+> 초안의 서비스명(`poc-*`)은 실제 컨테이너명(`am-*`)에 맞춰 갱신.  
+> Flink TaskManager POC 레플리카 수는 초기 계획 2개에서 현재 1개로 운영 중(확장 테스트는 Day 7에서 수행 예정).
+
+| 서비스명 | 컨테이너명 | 역할 | 기술 스택 | POC 레플리카 수 |
+|---------|-----------|------|---------|--------------|
+| `nifi` | `am-nifi` | 데이터 수집·라우팅·추적 | Apache NiFi 1.23.2 | 1 |
+| `zookeeper` | `am-zookeeper` | Kafka 클러스터 코디네이터 | ZooKeeper 3.8 | 1 |
+| `kafka` | `am-kafka` | 메시지 버퍼링 | Apache Kafka 3.6 | 1 |
+| `kafka-ui` ⭐ | `am-kafka-ui` | Kafka 웹 UI (토픽/메시지 조회) | provectuslabs/kafka-ui | 1 |
+| `flink-jobmanager` | `am-flink-jobmanager` | Flink 마스터 로드. 분산 처리 작업의 스케줄링 및 체크포인트 관리 | Apache Flink 1.18 | 1 |
+| `flink-taskmanager` | `docker-taskmanager-1` | Flink 워커 노드. 메시지 검증, 양식 변환, Rate limit 등 실제 연산 수행 | Apache Flink 1.18 | 1 (Day 7 확장 시 2~4) |
+| `sms-adapter` | `am-sms-adapter` | SMS Mock 발송 (포트 8101) | Python FastAPI | 1 |
+| `mms-adapter` | `am-mms-adapter` | MMS Mock 발송 (포트 8102) | Python FastAPI | 1 |
+| `rcs-adapter` | `am-rcs-adapter` | RCS Mock 발송 (포트 8103) | Python FastAPI | 1 |
+| `fax-adapter` | `am-fax-adapter` | FAX Mock 발송 (포트 8104) | Python FastAPI | 1 |
+| `email-adapter` | `am-email-adapter` | Email Mock 발송 (포트 8105) | Python FastAPI | 1 |
+| `postgres` | `am-postgres` | 발송 이력 및 통계 RDBMS | PostgreSQL 15 | 1 |
+| `mongodb` | `am-mongodb` | 월별·고객별 이력 보관 NoSQL | MongoDB 6.0 | 1 |
+| `prometheus` | `am-prometheus` | 메트릭 수집 + 알람 규칙 3개 | Prometheus 2.45 | 1 |
+| `grafana` | `am-grafana` | 시각화 대시보드 (provisioning 자동 로드) | Grafana 10.0 | 1 |
+| `history-api` ⭐ | `am-history-api` | **v0.3 신규: VOC 조회 API (포트 8200, Day 5 추가)** | Python FastAPI | 1 |
 
 ### 6.3 확장성 검증 목표
 
 - 레플리카 N개 유지 시, 1개 Pod 장애에도 서비스 정상 운영
-- `flink-taskmanager` 2개 → 4개 확장 시 처리량 1.7배 이상 증가
-- `sms-adapter` 2개 → 4개 확장 시 처리량 1.8배 이상 증가
+- `flink-taskmanager` 1개 → 2~4개 확장 시 처리량 1.7배 이상 증가 (Day 7 성능 테스트)
+- `sms-adapter` 1개 → 2개 확장 시 처리량 1.8배 이상 증가
 - 결과 수신 및 처리 정합성 99.9% 이상
 
 ---
@@ -468,12 +485,19 @@ AM 플랫폼은 Kafka를 **producer/consumer 직접 코딩 방식이 아닌 Kafk
 
 ### 7.4 VOC 대응 API
 
+> **v0.3 업데이트:** Day 5에서 `history-api` 서비스(포트 8200)로 실제 구현 완료. Swagger UI 제공: `http://localhost:8200/docs`
+
 ```
 GET /api/v1/history/tx/{txId}          # 트랜잭션 ID로 전 구간 이력 조회
 GET /api/v1/history/receiver/{phone}   # 수신번호로 발송 이력 조회
 GET /api/v1/metrics/success-rate       # 실시간 성공률 조회
 GET /api/v1/metrics/tps                # 실시간 TPS 조회
 ```
+
+추가 기능 (Day 5 구현):
+- **고급 검색 (AND 조건)**: txId, 수신번호, 채널, 상태, 기간을 동시 필터링
+- **E2E 파이프라인 시각화**: `/static/trace.html` — 구간별 처리 시간 그래프
+- **메트릭 엔드포인트**: `/metrics` (Prometheus scrape)
 
 ---
 
@@ -509,50 +533,100 @@ GET /api/v1/metrics/tps                # 실시간 TPS 조회
 
 ### 9.2 POC 환경 구성도
 
+> **v0.3 업데이트:** Day 5 완료 시점 실제 구성으로 갱신.
+
 ```
-Docker Compose 환경
-┌─────────────────────────────────────────────────────┐
-│                                                     │
-│  [Load Generator]  →  [NiFi:8080]                  │
-│                           ↓                         │
-│                    [Kafka:9092]                     │
-│                           ↓                         │
-│              [Flink JobManager:8081]               │
-│              [Flink TaskManager x2]                │
-│                           ↓                         │
-│   [SMS-Adapter] [MMS-Adapter] [RCS-Adapter]        │
-│   [FAX-Adapter] [Email-Adapter]  (Mock)            │
-│                           ↓                         │
-│              [PostgreSQL:5432]                      │
-│                           ↓                         │
-│   [Prometheus:9090]  →  [Grafana:3000]             │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+Docker Compose 환경 (16개 컨테이너, 3개 compose 파일)
+┌──────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│  [Load Generator]  →  [NiFi:8080]                                   │
+│                           ↓                                          │
+│                    [ZooKeeper:2181]                                  │
+│                    [Kafka:9092/29092]                                │
+│                    [Kafka-UI:8989]                                   │
+│                           ↓                                          │
+│              [Flink JobManager:8081]                                │
+│              [Flink TaskManager-1]                                  │
+│               (Job 3개: SendRequestJob / SendResultJob / RetryJob)  │
+│                           ↓                                          │
+│   [SMS-Adapter:8101]  [MMS-Adapter:8102]  [RCS-Adapter:8103]       │
+│   [FAX-Adapter:8104]  [Email-Adapter:8105]  (Mock)                 │
+│                           ↓                                          │
+│              [PostgreSQL:5432]  [MongoDB:27017]                     │
+│                           ↓                                          │
+│   [Prometheus:9090]  →  [Grafana:3000]  ←  [History-API:8200]      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+
+Compose 파일 구성:
+ - docker-compose.yml             : 핵심 인프라 10개 (base)
+ - docker-compose.monitoring.yml  : Prometheus/Grafana override + history-api
+ - docker-compose.adapters.yml    : Mock Adapter 5개
 ```
 
 ### 9.3 POC 디렉토리 구조
 
+> **v0.3 업데이트:** Day 5 완료 구조로 갱신. monitoring/provisioning, history-api, Flink Java 소스 등 반영.
+
 ```
-am-platform/
-├── README.md                       # 작업 계획 및 진행 현황
-├── docs/
-│   ├── architecture/
-│   │   └── AM_ARCHITECTURE.md      # 본 설계서
-│   └── diagrams/                   # 아키텍처 다이어그램
+CIMO_PoC/
+├── README.md                        # 작업 계획 및 진행 현황 (Day 1~7)
+├── CIMO_PoC_기동매뉴얼_v*.docx       # 재부팅/이관 기동 매뉴얼 (v1, v2, v3)
+├── AM_ARCHITECTURE.md               # 본 설계서 (v0.3)
+├── cimo_poc_status.html             # POC 현황 HTML 대시보드
+│
 ├── poc/
 │   ├── docker/
-│   │   └── docker-compose.yml      # 전체 환경 정의
-│   ├── config/
-│   │   └── kafka-topics.sh         # Kafka 토픽 초기화
+│   │   ├── docker-compose.yml             # 핵심 인프라 (ZK/Kafka/Flink/DB/NiFi)
+│   │   ├── docker-compose.monitoring.yml  # Prometheus/Grafana override + history-api
+│   │   ├── docker-compose.adapters.yml    # Mock Adapter 5개
+│   │   └── .env.example                   # 환경변수 템플릿
+│   │
 │   ├── init/
-│   │   └── init.sql                # DB 초기화 스크립트
-│   ├── nifi/                       # NiFi 플로우 템플릿
-│   ├── flink/                      # Flink Job 소스
-│   ├── services/                   # Mock Adapter 서비스
-│   └── monitoring/                 # Prometheus/Grafana 설정
+│   │   ├── init.sql                       # PostgreSQL 스키마 초기화
+│   │   └── init-mongo.js                  # MongoDB 컬렉션·인덱스 초기화
+│   │
+│   ├── nifi/
+│   │   ├── send-request-flow.json         # 발송 요청 수집 플로우 템플릿
+│   │   ├── send-result-flow.json          # 발송 결과 수집 플로우 템플릿
+│   │   ├── deploy_flow.py                 # 플로우 자동 배포 스크립트 (v0.3 추가)
+│   │   ├── requirements.txt               # 배포 스크립트 의존성
+│   │   └── README.md                      # NiFi 플로우 운영 가이드
+│   │
+│   ├── flink/                             # Flink Job Java 소스
+│   │   ├── src/main/java/com/am/platform/
+│   │   │   ├── jobs/                      # SendRequestJob / SendResultJob / RetryJob
+│   │   │   ├── operators/                 # Validation / ChannelDispatch / RateLimit
+│   │   │   ├── model/                     # SendMessage / SendResult
+│   │   │   └── util/                      # TxIdParser / ResultCodeClassifier
+│   │   ├── pom.xml                        # Maven 빌드 설정
+│   │   └── am-flink-fat.jar               # 빌드 산출물 (.gitignore)
+│   │
+│   ├── services/
+│   │   ├── base/                          # 공통 모듈 (adapter_base, metrics_helper)
+│   │   ├── sms-adapter/                   # 채널별 Mock Adapter
+│   │   ├── mms-adapter/
+│   │   ├── rcs-adapter/
+│   │   ├── fax-adapter/
+│   │   ├── email-adapter/
+│   │   └── history-api/                   # VOC 조회 API (v0.3 추가)
+│   │       ├── main.py
+│   │       ├── requirements.txt
+│   │       ├── Dockerfile
+│   │       └── static/trace.html          # E2E 시각화 UI
+│   │
+│   └── monitoring/
+│       ├── prometheus.yml                 # scrape 설정
+│       ├── alert-rules.yml                # 경보 규칙 3개 (성공률/Retry/DLQ)
+│       └── grafana/provisioning/
+│           ├── datasources/prometheus.yml # Prometheus + PostgreSQL 자동 등록
+│           └── dashboards/
+│               ├── default.yml
+│               └── json/am-platform-dashboard.json
+│
 └── tests/
-    ├── load/                       # 부하 테스트 스크립트
-    └── validation/                 # 정합성 검증 스크립트
+    ├── load/                              # 부하 테스트 스크립트 (Day 7)
+    └── validation/                        # 정합성 검증 스크립트 (Day 6)
 ```
 
 ---
@@ -642,7 +716,7 @@ CREATE INDEX idx_send_metrics_time ON msg_send_metrics(metric_time DESC, channel
 ---
 
 <!-- ================================================================ -->
-<!-- 아래 섹션 12~14는 초안에 포함된 발송 방식/트랜잭션ID/AS-IS/MongoDB  -->
+<!-- 섹션 12~14는 초안에 포함된 발송 방식/트랜잭션ID/AS-IS/MongoDB      -->
 <!-- 내용을 구체화하여 추가한 항목입니다. (2026-03-24 신규)             -->
 <!-- ================================================================ -->
 
@@ -883,8 +957,6 @@ PostgreSQL(트랜잭션 이력)과 역할을 분리한다.
 
 ### 14.2 MongoDB 컬렉션 설계
 
-### 14.2 MongoDB 컬렉션 설계
-
 #### 설계 원칙
 
 - **고객 단위 + 월 단위** 묶음 구조: 한 도큐먼트 = 한 고객의 한 달 치 전체 발송 이력
@@ -1062,4 +1134,117 @@ db.send_histories_202603.createIndex({ "sends.status": 1, "sends.channel": 1 });
 
 ---
 
-*문서 끝 — 다음 업데이트: POC 환경 구축 완료 후 실측 수치 반영 예정*
+<!-- ================================================================ -->
+<!-- 섹션 16은 POC Day 1~5 완료 후 실제 구축 결과를 반영하여           -->
+<!-- 설계 문서에 피드백한 항목입니다. (v0.3, 2026-04-22)              -->
+<!-- ================================================================ -->
+
+## 16. POC 구축 실측 결과 및 설계 피드백
+
+> **목적:** Day 1~5 POC 구축 과정에서 실제로 관찰된 사항들을 설계 문서에 역으로 반영한다.  
+> 초안 설계와 실측 차이가 있는 부분, 새로 발견된 고려사항, 운영 시 주의사항을 기록한다.
+
+### 16.1 Day별 완료 현황
+
+| Day | 주요 작업 | 완료 시점 | 산출물 |
+|-----|---------|---------|--------|
+| Day 1 | 아키텍처 설계서 작성 | 2026-03-24 | 본 문서 v0.1 |
+| Day 2 | Docker 환경 구성, DB 초기화 | 2026-03-27 | docker-compose.yml, init.sql, init-mongo.js |
+| Day 3 | Mock Adapter 5개, NiFi 플로우 구성 | 2026-03-28 | adapters/*, send-request-flow.json |
+| Day 4 | Flink Job 3개 개발 | 2026-04-14 | SendRequestJob/SendResultJob/RetryJob |
+| Day 5 | 모니터링 강화 + VOC History API | 2026-04-15 | Prometheus 알람 3개, Grafana provisioning, history-api |
+| Day 6 | **통합 테스트 (진행 중)** | - | - |
+| Day 7 | 성능 테스트 3시나리오 | 예정 | 실시간/배치/혼합 부하 테스트 결과 |
+
+### 16.2 설계 초안과의 실측 차이
+
+#### 16.2.1 Flink TaskManager 레플리카
+
+- **초안 설계**: POC 기본 2개, 확장 테스트 시 4개
+- **실측**: POC Day 5까지 1개 운영. Day 7에서 1→2~4 확장 테스트 예정
+- **이유**: 단일 호스트 Docker Compose 환경에서는 1개로도 Day 5까지의 기능 검증 가능. 확장 테스트는 Day 7에서 수행이 타당
+
+#### 16.2.2 Kafka 토픽 수
+
+- **초안 설계**: 10개 (`topic.send.batch` 제외)
+- **실측**: 11개. Day 7 배치 성능 테스트를 위해 `topic.send.batch` 추가
+- **반영**: 섹션 4.5 갱신
+
+#### 16.2.3 서비스 추가 — history-api (Day 5)
+
+- **초안 설계**: VOC 조회 기능이 별도 서비스로 분리되지 않았음
+- **실측**: Day 5에 독립 FastAPI 서비스(`am-history-api:8200`)로 구현
+- **판단**: 설계 원칙(비즈니스/코어 분리)에 오히려 더 부합. VOC 조회는 비즈니스 레이어 API로 분리하는 것이 옳다
+- **반영**: 섹션 6.2, 7.4 갱신
+
+#### 16.2.4 docker-compose 파일 분리
+
+- **초안 설계**: 단일 `docker-compose.yml`
+- **실측**: 3개 파일로 분리
+  - `docker-compose.yml`: 핵심 인프라 10개
+  - `docker-compose.monitoring.yml`: Prometheus/Grafana override + history-api
+  - `docker-compose.adapters.yml`: Adapter 5개
+- **이유**: 모니터링 스택과 Adapter를 선택적으로 기동할 수 있도록 분리. Day 7 성능 테스트 시 Adapter 레플리카 조정이 용이해짐
+- **반영**: 섹션 9.2, 9.3 갱신
+
+### 16.3 운영 시 발견된 고려사항
+
+#### 16.3.1 Windows Git Bash 환경 주의사항
+
+POC가 Windows 환경에서 개발되면서 발견된 환경 특이사항:
+
+| 이슈 | 해결 방법 |
+|------|---------|
+| `docker exec` 명령에서 Unix 경로 자동 변환 | `MSYS_NO_PATHCONV=1` prefix 사용 |
+| FastAPI `/metrics` → `/metrics/` 리다이렉트 | Prometheus scrape config에 trailing slash 명시 |
+| Grafana 10.x Text panel HTML 차단 | `GF_PANELS_DISABLE_SANITIZE_HTML=true` |
+| Grafana datasource UID 매칭 실패 | provisioning YAML에 UID 명시적 선언 |
+| `kafka-topics.sh` 로컬 실행 불가 | `docker exec` 내부 실행 |
+| Kafka `InconsistentClusterIdException` (재시작 시) | `docker compose down -v` + bind-mount data 삭제 |
+
+#### 16.3.2 Flink Job 휘발성
+
+- Flink Job은 JobManager 메모리에 상주. 컨테이너 재시작 시 소실됨
+- 매번 `flink run`으로 재submit 필요 → 기동 매뉴얼에 절차 포함
+- 프로덕션에서는 Savepoint/Checkpoint 영속화 필요 (POC 범위 밖)
+
+#### 16.3.3 중복 Job 탐지
+
+- `docker compose up -d`가 기존 컨테이너를 재활용하는 경우 이전 Job이 살아있을 수 있음
+- `flink list`에서 동일 이름 Job 중복 시, Kafka Consumer Group 충돌 가능
+- **운영 체크리스트**: 재기동 시 반드시 `flink list` 후 오래된 Job `flink cancel`
+
+#### 16.3.4 Adapter 이미지와 소스 불일치
+
+- Git pull로 `main.py`는 최신이지만 Docker 이미지는 옛 빌드 상태일 수 있음
+- 증상: Adapter `Restarting` 무한 루프, `Duplicated timeseries in CollectorRegistry` 에러
+- **운영 체크리스트**: 소스 변경 시 `docker compose build --no-cache` 후 재기동
+
+#### 16.3.5 NiFi 플로우 휘발성
+
+- NiFi 플로우는 `/opt/nifi/nifi-current/conf/flow.xml.gz`에 보관되어 재시작 시 복원됨
+- 하지만 신규 PC 이관 시에는 이 파일이 없으므로 `deploy_flow.py` 스크립트로 자동 배포 필요
+- 현재 플로우 구성: ListenHTTP → EvaluateJsonPath → RouteOnAttribute → UpdateAttribute → PublishKafka → LogMessage (7개 프로세서)
+
+### 16.4 검증된 사항 (설계대로 동작 확인)
+
+다음 항목들은 Day 1~5 동안 **설계대로 동작함이 검증**되었다:
+
+- ✅ 코어/비즈니스 영역 분리 (섹션 2) — history-api가 비즈니스 레이어로 적절히 분리됨
+- ✅ 오픈소스 3종 조합 (섹션 3) — NiFi→Kafka→Flink 파이프라인 전 구간 동작
+- ✅ 표준 메시지 포맷 (섹션 5.2) — 모든 Adapter가 동일 JSON 구조로 동작
+- ✅ 재처리 정책 (섹션 4.6) — 지수 백오프 3회 시도 후 DLQ 이관 확인
+- ✅ VOC 조회 API (섹션 7.4) — txId, 수신번호, 채널, 기간 AND 필터 동작
+- ✅ MongoDB 고객+월 단위 적재 (섹션 14) — `send_histories_YYYYMM` 컬렉션 생성
+
+### 16.5 Day 6~7 남은 검증 항목
+
+- ⏳ **Day 6 (통합 테스트)**: 전 구간 E2E 정합성, 장애 시나리오 대응
+- ⏳ **Day 7 (성능 테스트)**: 
+  - 목표 2,000 TPS 달성 여부
+  - 레플리카 확장 시 처리량 1.7배 이상 증가 여부
+  - 3시나리오 별 성능 특성 (실시간 단건 / 배치 다건 / 혼합)
+
+---
+
+*문서 끝 — 다음 업데이트: Day 7 성능 테스트 완료 후 실측 수치 반영 예정 (v0.4)*
