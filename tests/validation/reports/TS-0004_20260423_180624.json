@@ -1,0 +1,52 @@
+{
+  "summary": {
+    "scenario_code": "TS-0004",
+    "title": "RCS to SMS Fallback Verification",
+    "started_at": "2026-04-23T18:05:39.408633+09:00",
+    "finished_at": "2026-04-23T18:06:24.433508+09:00",
+    "total_count": 2,
+    "pass_count": 1,
+    "fail_count": 1,
+    "overall_pass": false,
+    "test_cases": [
+      {
+        "tc_code": "TC-0009",
+        "title": "Fallback occurrence (RCS→SMS, 200 msgs, expect >=1)",
+        "passed": false,
+        "started_at": "2026-04-23T18:05:39.475083+09:00",
+        "finished_at": "2026-04-23T18:06:22.982286+09:00",
+        "elapsed_sec": 43.51,
+        "details": {},
+        "error": "exception: AttributeError: 'NoneType' object has no attribute 'splitlines'"
+      },
+      {
+        "tc_code": "TC-0010",
+        "title": "Fallback re-dispatch (SMS dispatch topic receives RCS-origin fallbacks)",
+        "passed": true,
+        "started_at": "2026-04-23T18:06:22.983259+09:00",
+        "finished_at": "2026-04-23T18:06:24.433283+09:00",
+        "elapsed_sec": 1.45,
+        "details": {
+          "sms_dispatch_before": 222,
+          "sms_dispatch_after": 237,
+          "sms_dispatch_delta": 15,
+          "expected_fallbacks": 0,
+          "verification": "SMS dispatch topic offset delta >= fallback count"
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count_rcs": 200,
+    "wait_sec": 30,
+    "min_fallback_count": 1,
+    "fallback_source": "RCS channel only",
+    "expected_behavior": "50002 result_code triggers channel=SMS mutation in SendResultJob"
+  },
+  "meta": {
+    "scenario_code": "TS-0004",
+    "timestamp_kst": "2026-04-23T18:06:24+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "summary": {
+    "scenario_code": "TS-0002",
+    "title": "Adapter Failure Isolation",
+    "started_at": "2026-04-23T15:57:57.385860+09:00",
+    "finished_at": "2026-04-23T15:58:09.723496+09:00",
+    "total_count": 2,
+    "pass_count": 2,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0004",
+        "title": "Isolation (SMS stopped, other channels keep running)",
+        "passed": true,
+        "started_at": "2026-04-23T15:57:57.674383+09:00",
+        "finished_at": "2026-04-23T15:58:03.309346+09:00",
+        "elapsed_sec": 5.63,
+        "details": {
+          "target_channel": "SMS",
+          "target_delivered": 0,
+          "target_status_breakdown": {
+            "DISPATCHING": 4
+          },
+          "other_terminal_ratio": 1.0,
+          "other_by_status": {
+            "DISPATCHING": 6,
+            "DELIVERED": 10
+          },
+          "all_tx_ids_count": 20
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0005",
+        "title": "Recovery (SMS restarted, backlog drains)",
+        "passed": true,
+        "started_at": "2026-04-23T15:58:03.310720+09:00",
+        "finished_at": "2026-04-23T15:58:09.670369+09:00",
+        "elapsed_sec": 6.36,
+        "details": {
+          "target_channel": "SMS",
+          "backlog_count": 4,
+          "delivered_count": 4,
+          "recovery_ratio": 1.0,
+          "recovery_elapsed": 3.0,
+          "final_status": {
+            "DELIVERED": 4
+          }
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "target_channel": "SMS",
+    "inject_per_channel": 4,
+    "other_wait_sec": 60,
+    "recovery_wait_sec": 60
+  },
+  "meta": {
+    "scenario_code": "TS-0002",
+    "timestamp_kst": "2026-04-23T15:58:09+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

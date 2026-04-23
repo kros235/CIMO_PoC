@@ -1,0 +1,21 @@
+# tests/validation/requirements.txt
+# Dependencies for Day 6 integration tests (TS-0001 ~ TS-0006)
+# Install: pip install -r tests/validation/requirements.txt
+
+# HTTP client for NiFi endpoint (8090)
+requests>=2.31.0
+
+# PostgreSQL client for consistency verification
+psycopg2-binary>=2.9.9
+
+# Kafka consumer/producer (optional fallback for direct topic inspection)
+confluent-kafka>=2.3.0
+
+# HTML report generation with syntax highlighting
+jinja2>=3.1.2
+
+# Colored console output
+colorama>=0.4.6
+
+# Optional: pytest for structured test runs (tests also runnable standalone)
+pytest>=7.4.3

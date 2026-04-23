@@ -1,0 +1,75 @@
+{
+  "summary": {
+    "scenario_code": "TS-0004",
+    "title": "RCS to SMS Fallback Verification",
+    "started_at": "2026-04-23T18:16:53.929274+09:00",
+    "finished_at": "2026-04-23T18:17:39.358770+09:00",
+    "total_count": 2,
+    "pass_count": 2,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0009",
+        "title": "Fallback occurrence (RCS→SMS, 200 msgs, expect >=1)",
+        "passed": true,
+        "started_at": "2026-04-23T18:16:54.044800+09:00",
+        "finished_at": "2026-04-23T18:17:37.840874+09:00",
+        "elapsed_sec": 43.8,
+        "details": {
+          "inject_count": 200,
+          "fallback_count": 18,
+          "fallback_rate": "9.00%",
+          "sample_fallbacks": [
+            {
+              "txId": "17769358159000311300700000000000009"
+            },
+            {
+              "txId": "17769358159000311300700000000000011"
+            },
+            {
+              "txId": "17769358159000311300700000000000014"
+            },
+            {
+              "txId": "17769358159000311300700000000000021"
+            },
+            {
+              "txId": "17769358159000311300700000000000037"
+            }
+          ],
+          "expected_rate": "~1% (50002 = 1/3 of 3% retry allocation)",
+          "verification": "Kafka topic.send.retry scan for channel=SMS"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0010",
+        "title": "Fallback re-dispatch (SMS dispatch topic receives RCS-origin fallbacks)",
+        "passed": true,
+        "started_at": "2026-04-23T18:17:37.841501+09:00",
+        "finished_at": "2026-04-23T18:17:39.358530+09:00",
+        "elapsed_sec": 1.52,
+        "details": {
+          "sms_dispatch_before": 237,
+          "sms_dispatch_after": 255,
+          "sms_dispatch_delta": 18,
+          "expected_fallbacks": 18,
+          "verification": "SMS dispatch topic offset delta >= fallback count"
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count_rcs": 200,
+    "wait_sec": 30,
+    "min_fallback_count": 1,
+    "fallback_source": "RCS channel only",
+    "expected_behavior": "50002 result_code triggers channel=SMS mutation in SendResultJob"
+  },
+  "meta": {
+    "scenario_code": "TS-0004",
+    "timestamp_kst": "2026-04-23T18:17:39+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

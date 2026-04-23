@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "scenario_code": "TS-0003",
+    "title": "Retry Mechanism Verification",
+    "started_at": "2026-04-23T16:10:43.037717+09:00",
+    "finished_at": "2026-04-23T16:11:19.288213+09:00",
+    "total_count": 3,
+    "pass_count": 2,
+    "fail_count": 1,
+    "overall_pass": false,
+    "test_cases": [
+      {
+        "tc_code": "TC-0006",
+        "title": "Retry occurrence (200 msgs, expect >=1 retried)",
+        "passed": false,
+        "started_at": "2026-04-23T16:10:43.150501+09:00",
+        "finished_at": "2026-04-23T16:11:17.294217+09:00",
+        "elapsed_sec": 34.14,
+        "details": {
+          "inject_count": 200,
+          "retry_topic_produced": 8,
+          "db_retried_rows": 0
+        },
+        "error": "DB retried rows 0 < 1"
+      },
+      {
+        "tc_code": "TC-0007",
+        "title": "Retry resolution (>=98% reach terminal within 180s)",
+        "passed": true,
+        "started_at": "2026-04-23T16:11:17.295450+09:00",
+        "finished_at": "2026-04-23T16:11:17.300034+09:00",
+        "elapsed_sec": 0.0,
+        "details": {
+          "total_injected": 200,
+          "terminal_count": 200,
+          "terminal_ratio": 1.0,
+          "elapsed_sec": 0.0,
+          "by_status": {
+            "DELIVERED": 105,
+            "DISPATCHING": 95
+          }
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0008",
+        "title": "RetryJob consumer group keeps up (topic.send.retry LAG == 0)",
+        "passed": true,
+        "started_at": "2026-04-23T16:11:17.300969+09:00",
+        "finished_at": "2026-04-23T16:11:19.287856+09:00",
+        "elapsed_sec": 1.99,
+        "details": {
+          "consumer_group": "am-flink-retry-group",
+          "topic": "topic.send.retry",
+          "current_offset": 34,
+          "end_offset": 34,
+          "lag": 0,
+          "retry_messages_consumed": 34
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count": 200,
+    "wait_timeout_sec": 180,
+    "min_retry_count": 1,
+    "min_terminal_ratio": 0.98,
+    "retry_rate_design": "3% fixed (per adapter_base.py)"
+  },
+  "meta": {
+    "scenario_code": "TS-0003",
+    "timestamp_kst": "2026-04-23T16:11:19+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

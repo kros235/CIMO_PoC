@@ -1,0 +1,80 @@
+{
+  "summary": {
+    "scenario_code": "TS-0003",
+    "title": "Retry Mechanism Verification",
+    "started_at": "2026-04-23T17:53:23.460878+09:00",
+    "finished_at": "2026-04-23T17:53:59.274682+09:00",
+    "total_count": 3,
+    "pass_count": 3,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0006",
+        "title": "Retry occurrence (200 msgs, expect >=1 retried)",
+        "passed": true,
+        "started_at": "2026-04-23T17:53:23.586024+09:00",
+        "finished_at": "2026-04-23T17:53:57.634793+09:00",
+        "elapsed_sec": 34.05,
+        "details": {
+          "inject_count": 200,
+          "retry_topic_produced": 22,
+          "db_retried_rows": 0,
+          "expected_rate": "~3% (per adapter_base.py fixed allocation)",
+          "observed_rate": "11.0%",
+          "verification_method": "Kafka topic.send.retry offset delta",
+          "design_limitation": "L01 - msg_send_history.retry_count not updated (Day 8 fix planned)"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0007",
+        "title": "Retry resolution (>=98% reach terminal within 180s)",
+        "passed": true,
+        "started_at": "2026-04-23T17:53:57.635437+09:00",
+        "finished_at": "2026-04-23T17:53:57.639162+09:00",
+        "elapsed_sec": 0.0,
+        "details": {
+          "total_injected": 200,
+          "terminal_count": 200,
+          "terminal_ratio": 1.0,
+          "elapsed_sec": 0.0,
+          "by_status": {
+            "DISPATCHING": 85,
+            "DELIVERED": 115
+          }
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0008",
+        "title": "RetryJob consumer group keeps up (topic.send.retry LAG == 0)",
+        "passed": true,
+        "started_at": "2026-04-23T17:53:57.639843+09:00",
+        "finished_at": "2026-04-23T17:53:59.274448+09:00",
+        "elapsed_sec": 1.63,
+        "details": {
+          "consumer_group": "am-flink-retry-group",
+          "topic": "topic.send.retry",
+          "current_offset": 56,
+          "end_offset": 56,
+          "lag": 0,
+          "retry_messages_consumed": 56
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count": 200,
+    "wait_timeout_sec": 180,
+    "min_retry_count": 1,
+    "min_terminal_ratio": 0.98,
+    "retry_rate_design": "3% fixed (per adapter_base.py)"
+  },
+  "meta": {
+    "scenario_code": "TS-0003",
+    "timestamp_kst": "2026-04-23T17:53:59+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

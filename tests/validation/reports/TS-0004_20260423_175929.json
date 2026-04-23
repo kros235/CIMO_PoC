@@ -1,0 +1,55 @@
+{
+  "summary": {
+    "scenario_code": "TS-0004",
+    "title": "RCS to SMS Fallback Verification",
+    "started_at": "2026-04-23T17:58:30.510865+09:00",
+    "finished_at": "2026-04-23T17:59:29.381577+09:00",
+    "total_count": 2,
+    "pass_count": 1,
+    "fail_count": 1,
+    "overall_pass": false,
+    "test_cases": [
+      {
+        "tc_code": "TC-0009",
+        "title": "Fallback occurrence (RCS→SMS, 200 msgs, expect >=1)",
+        "passed": false,
+        "started_at": "2026-04-23T17:58:30.584368+09:00",
+        "finished_at": "2026-04-23T17:59:27.869602+09:00",
+        "elapsed_sec": 57.29,
+        "details": {
+          "inject_count": 200,
+          "fallback_count": 0
+        },
+        "error": "Only 0 fallback events detected (expected >=1). Probability was ~1% — consider increasing INJECT_COUNT_RCS."
+      },
+      {
+        "tc_code": "TC-0010",
+        "title": "Fallback re-dispatch (SMS dispatch topic receives RCS-origin fallbacks)",
+        "passed": true,
+        "started_at": "2026-04-23T17:59:27.870694+09:00",
+        "finished_at": "2026-04-23T17:59:29.381266+09:00",
+        "elapsed_sec": 1.51,
+        "details": {
+          "sms_dispatch_before": 216,
+          "sms_dispatch_after": 222,
+          "sms_dispatch_delta": 6,
+          "expected_fallbacks": 0,
+          "verification": "SMS dispatch topic offset delta >= fallback count"
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count_rcs": 200,
+    "wait_sec": 30,
+    "min_fallback_count": 1,
+    "fallback_source": "RCS channel only",
+    "expected_behavior": "50002 result_code triggers channel=SMS mutation in SendResultJob"
+  },
+  "meta": {
+    "scenario_code": "TS-0004",
+    "timestamp_kst": "2026-04-23T17:59:29+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

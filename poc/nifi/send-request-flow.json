@@ -80,9 +80,9 @@
       "position": { "x": 400, "y": 400 },
       "properties": {
         "Routing Strategy": "Route to 'matched' if all match",
-        "txid_valid": "${txId:matches('[0-9]{13}(01|02|03|04|05)[0-9]{17}'):equals('true')}"
+        "txid_valid": "${txId:matches('[0-9]{13}(01|02|03|04|05)[0-9]{20}'):equals('true')}"
       },
-      "note": "정규식 설명: [0-9]{13}=메시지ID 13자리 + (01~05)=발송방법코드 2자리 + [0-9]{17}=일자카운트3+발송처코드3+시퀀스14=20자리 → 총 35자리",
+      "note": "정규식 설명: [0-9]{13}=메시지ID 13자리 + (01~05)=발송방법코드 2자리 + [0-9]{20}=일자카운트3+발송처코드3+시퀀스14=20자리 → 총 35자리",
       "relationships": {
         "matched":   "proc-attach-meta",
         "unmatched": "proc-log-invalid"
