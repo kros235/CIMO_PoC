@@ -40,3 +40,15 @@ Thumbs.db
 poc/flink/target/
 poc/flink/am-flink-fat.jar
 poc/flink/dependency-reduced-pom.xml
+
+# Kafka 자동 복구 시 생성되는 백업 디렉토리
+poc/docker/kafka/data.backup.*
+poc/docker/kafka/data/
+
+# Flink fat-jar (빌드 산출물)
+poc/flink/am-flink-fat.jar
+poc/flink/target/
+
+# Adapter 백업 파일
+scripts/*.bak*
+scripts/*.bak
