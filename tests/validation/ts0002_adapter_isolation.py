@@ -52,6 +52,13 @@ from lib.adapter_controller import AdapterController
 # ─────────────────────────────────────────────────────────────
 SCENARIO_CODE  = "TS-0002"
 SCENARIO_TITLE = "Adapter Failure Isolation"
+# ─── 추가: 한국어 제목 (콘솔 출력용) ───
+SCENARIO_TITLE_KO = "어댑터 장애 격리"
+TC_TITLES_KO = {
+    "TC-0004": "장애 격리 — 특정 채널 중단 시 나머지 채널 정상 동작",
+    "TC-0005": "장애 복구 — 채널 재기동 후 적체분 정상 소진",
+}
+# ─── 추가 끝 ───
 
 TARGET_CHANNEL     = os.getenv("TARGET_CHANNEL",      "SMS")
 INJECT_PER_CHANNEL = int(os.getenv("INJECT_PER_CHANNEL", "4"))
@@ -296,7 +303,7 @@ def run_tc_0005(target_tx_ids: list, nifi: NiFiClient, db: DBChecker,
 # ─────────────────────────────────────────────────────────────
 def main() -> int:
     configure_logging(verbose=False)
-    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE}")
+    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE_KO} ({SCENARIO_TITLE})")
     print_info(
         f"Config: TARGET_CHANNEL={TARGET_CHANNEL}  "
         f"INJECT_PER_CHANNEL={INJECT_PER_CHANNEL}  "
@@ -331,14 +338,14 @@ def main() -> int:
 
         # TC-0004: Isolation
         print()
-        banner("TC-0004 execution", char="-")
+        banner(f"TC-0004 execution - {TC_TITLES_KO['TC-0004']}", char="-")
         tc1 = run_tc_0004(nifi, db, ctrl)
         scenario.add_tc(tc1)
 
         # TC-0005: Recovery (always attempt, even if TC-0004 failed,
         # because the target Adapter is stopped and must be restored)
         print()
-        banner("TC-0005 execution", char="-")
+        banner(f"TC-0005 execution - {TC_TITLES_KO['TC-0005']}", char="-")
         target_tx_ids = tc1.details.get("_target_tx_ids", [])
         tc2 = run_tc_0005(target_tx_ids, nifi, db, ctrl)
         scenario.add_tc(tc2)
@@ -356,7 +363,7 @@ def main() -> int:
         nifi.close()
         db.close()
 
-    scenario.print_summary()
+    scenario.print_summary(title_ko=SCENARIO_TITLE_KO)
 
     # Clean up internal tracking keys before saving JSON
     for tc in scenario.tc_results:

@@ -246,8 +246,13 @@ class TestScenarioResult:
             "test_cases":    [tc.to_dict() for tc in self.tc_results],
         }
 
-    def print_summary(self) -> None:
-        banner(f"{self.scenario_code} Summary")
+    def print_summary(self, title_ko: str | None = None) -> None:
+        # ─── 변경: 한국어 제목 인자(title_ko) 추가, banner 헤더에 한국어 병기 ───
+        if title_ko:
+            banner(f"{self.scenario_code} Summary - {title_ko} ({self.title})")
+        else:
+            banner(f"{self.scenario_code} Summary - {self.title}")
+        # ─── 변경 끝 ───
         for tc in self.tc_results:
             marker = f"{Fore.GREEN}PASS" if tc.passed else f"{Fore.RED}FAIL"
             print(f"  {marker}{Style.RESET_ALL}  {tc.tc_code}  {tc.title}  ({tc.elapsed_sec:.1f}s)")

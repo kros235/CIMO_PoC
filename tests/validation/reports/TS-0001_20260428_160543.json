@@ -1,0 +1,87 @@
+{
+  "summary": {
+    "scenario_code": "TS-0001",
+    "title": "Pipeline Consistency Verification",
+    "started_at": "2026-04-28T16:05:34.509906+09:00",
+    "finished_at": "2026-04-28T16:05:43.051364+09:00",
+    "total_count": 3,
+    "pass_count": 3,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0001",
+        "title": "Basic consistency (100 injected)",
+        "passed": true,
+        "started_at": "2026-04-28T16:05:34.575535+09:00",
+        "finished_at": "2026-04-28T16:05:43.043230+09:00",
+        "elapsed_sec": 8.47,
+        "details": {
+          "inject_ok": 100,
+          "db_terminal": 100,
+          "consistency": 1.0,
+          "by_status": {
+            "DELIVERED": 64,
+            "DISPATCHING": 36
+          },
+          "elapsed_sec": 3.13,
+          "timed_out": false,
+          "missing_samples": []
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0002",
+        "title": "Individual txId matching (100% of injected found in DB)",
+        "passed": true,
+        "started_at": "2026-04-28T16:05:43.044217+09:00",
+        "finished_at": "2026-04-28T16:05:43.046503+09:00",
+        "elapsed_sec": 0.0,
+        "details": {
+          "total_injected": 100,
+          "total_found": 100,
+          "missing": 0
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0003",
+        "title": "Channel distribution evenness (tolerance +/-10%)",
+        "passed": true,
+        "started_at": "2026-04-28T16:05:43.047356+09:00",
+        "finished_at": "2026-04-28T16:05:43.051168+09:00",
+        "elapsed_sec": 0.0,
+        "details": {
+          "total_in_db": 100,
+          "by_channel": {
+            "MMS": 20,
+            "EMAIL": 20,
+            "RCS": 20,
+            "SMS": 20,
+            "FAX": 20
+          },
+          "tolerance": 0.1
+        },
+        "error": null
+      }
+    ]
+  },
+  "config": {
+    "inject_count": 100,
+    "wait_timeout_sec": 180,
+    "channel_tolerance": 0.1,
+    "min_consistency": 0.99,
+    "channels": [
+      "SMS",
+      "MMS",
+      "RCS",
+      "FAX",
+      "EMAIL"
+    ]
+  },
+  "meta": {
+    "scenario_code": "TS-0001",
+    "timestamp_kst": "2026-04-28T16:05:43+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}

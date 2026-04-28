@@ -45,6 +45,14 @@ from lib.db_checker import DBChecker
 # ─────────────────────────────────────────────────────────────
 SCENARIO_CODE  = "TS-0001"
 SCENARIO_TITLE = "Pipeline Consistency Verification"
+# ─── 추가: 한국어 제목 (콘솔 출력용) ───
+SCENARIO_TITLE_KO = "파이프라인 정합성 검증"
+TC_TITLES_KO = {
+    "TC-0001": "기본 정합성 — 주입 건수 대비 적재 건수 일치",
+    "TC-0002": "개별 txId 매칭 — 주입한 txId 100% DB 적재 확인",
+    "TC-0003": "채널 분배 균등성 — 채널별 분배 편차 허용오차 내",
+}
+# ─── 추가 끝 ───
 
 INJECT_COUNT      = int(os.getenv("INJECT_COUNT", "100"))
 WAIT_TIMEOUT_SEC  = int(os.getenv("WAIT_TIMEOUT_SEC", "180"))
@@ -270,7 +278,7 @@ def run_tc_0003(messages: list, db: DBChecker) -> TestCaseResult:
 # ─────────────────────────────────────────────────────────────
 def main() -> int:
     configure_logging(verbose=False)
-    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE}")
+    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE_KO} ({SCENARIO_TITLE})")
     print_info(f"Config: INJECT_COUNT={INJECT_COUNT}  WAIT_TIMEOUT_SEC={WAIT_TIMEOUT_SEC}  CHANNEL_TOLERANCE={CHANNEL_TOLERANCE}")
 
     scenario = TestScenarioResult(SCENARIO_CODE, SCENARIO_TITLE)
@@ -293,19 +301,19 @@ def main() -> int:
 
         # TC-0001 injects + verifies ratio
         print()
-        banner("TC-0001 execution", char="-")
+        banner(f"TC-0001 execution - {TC_TITLES_KO['TC-0001']}", char="-")
         tc1 = run_tc_0001(messages, db, nifi)
         scenario.add_tc(tc1)
 
         # TC-0002 only reads (no new injection)
         print()
-        banner("TC-0002 execution", char="-")
+        banner(f"TC-0002 execution - {TC_TITLES_KO['TC-0002']}", char="-")
         tc2 = run_tc_0002(messages, db)
         scenario.add_tc(tc2)
 
         # TC-0003 only reads
         print()
-        banner("TC-0003 execution", char="-")
+        banner(f"TC-0003 execution - {TC_TITLES_KO['TC-0003']}", char="-")
         tc3 = run_tc_0003(messages, db)
         scenario.add_tc(tc3)
 
@@ -315,7 +323,7 @@ def main() -> int:
         db.close()
 
     # Print summary
-    scenario.print_summary()
+    scenario.print_summary(title_ko=SCENARIO_TITLE_KO)
 
     # Save JSON report
     report_path = save_json_report(SCENARIO_CODE, {

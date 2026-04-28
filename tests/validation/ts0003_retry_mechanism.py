@@ -64,6 +64,14 @@ from lib.db_checker import DBChecker
 # ─────────────────────────────────────────────────────────────
 SCENARIO_CODE  = "TS-0003"
 SCENARIO_TITLE = "Retry Mechanism Verification"
+# ─── 추가: 한국어 제목 (콘솔 출력용) ───
+SCENARIO_TITLE_KO = "재처리 메커니즘 검증"
+TC_TITLES_KO = {
+    "TC-0006": "재처리 발생 — 실패 건의 재시도 큐 인입 확인",
+    "TC-0007": "재처리 종결 — 재시도 건의 최종 상태 도달 비율 확인",
+    "TC-0008": "재처리 잔여량 확인 — RetryJob Consumer Group LAG 해소",
+}
+# ─── 추가 끝 ───
 
 INJECT_COUNT     = int(os.getenv("INJECT_COUNT",     "200"))
 WAIT_TIMEOUT_SEC = int(os.getenv("WAIT_TIMEOUT_SEC", "180"))
@@ -355,7 +363,7 @@ def run_tc_0008() -> TestCaseResult:
 # ─────────────────────────────────────────────────────────────
 def main() -> int:
     configure_logging(verbose=False)
-    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE}")
+    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE_KO} ({SCENARIO_TITLE})")
     print_info(
         f"Config: INJECT_COUNT={INJECT_COUNT}  "
         f"WAIT_TIMEOUT_SEC={WAIT_TIMEOUT_SEC}  MIN_RETRY_COUNT={MIN_RETRY_COUNT}"
@@ -382,19 +390,19 @@ def main() -> int:
 
         # TC-0006: retry occurrence (injection happens here)
         print()
-        banner("TC-0006 execution", char="-")
+        banner(f"TC-0006 execution - {TC_TITLES_KO['TC-0006']}", char="-")
         tc1, tx_ids = run_tc_0006(messages, db, nifi)
         scenario.add_tc(tc1)
 
         # TC-0007: wait for terminal (uses same tx_ids)
         print()
-        banner("TC-0007 execution", char="-")
+        banner(f"TC-0007 execution - {TC_TITLES_KO['TC-0007']}", char="-")
         tc2 = run_tc_0007(tx_ids, db)
         scenario.add_tc(tc2)
 
         # TC-0008: RetryJob consumer group lag
         print()
-        banner("TC-0008 execution", char="-")
+        banner(f"TC-0008 execution - {TC_TITLES_KO['TC-0008']}", char="-")
         tc3 = run_tc_0008()
         scenario.add_tc(tc3)
 
@@ -403,7 +411,7 @@ def main() -> int:
         nifi.close()
         db.close()
 
-    scenario.print_summary()
+    scenario.print_summary(title_ko=SCENARIO_TITLE_KO)
 
     report_path = save_json_report(SCENARIO_CODE, {
         "summary": scenario.to_dict(),

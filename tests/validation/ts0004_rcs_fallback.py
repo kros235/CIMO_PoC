@@ -67,6 +67,13 @@ from lib.db_checker import DBChecker
 # ─────────────────────────────────────────────────────────────
 SCENARIO_CODE  = "TS-0004"
 SCENARIO_TITLE = "RCS to SMS Fallback Verification"
+# ─── 추가: 한국어 제목 (콘솔 출력용) ───
+SCENARIO_TITLE_KO = "RCS→SMS Fallback 검증"
+TC_TITLES_KO = {
+    "TC-0009": "Fallback 발생 — RCS 실패분의 SMS 전환 발생 확인",
+    "TC-0010": "Fallback 재발송 — 전환된 건의 SMS 발송 토픽 인입 확인",
+}
+# ─── 추가 끝 ───
 
 INJECT_COUNT_RCS   = int(os.getenv("INJECT_COUNT_RCS",   "200"))
 WAIT_SEC           = int(os.getenv("WAIT_SEC",           "30"))
@@ -330,7 +337,7 @@ def run_tc_0010(tx_ids: list, sms_dispatch_before: int, fallback_count: int) -> 
 # ─────────────────────────────────────────────────────────────
 def main() -> int:
     configure_logging(verbose=False)
-    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE}")
+    banner(f"{SCENARIO_CODE} - {SCENARIO_TITLE_KO} ({SCENARIO_TITLE})")
     print_info(
         f"Config: INJECT_COUNT_RCS={INJECT_COUNT_RCS}  "
         f"WAIT_SEC={WAIT_SEC}  MIN_FALLBACK_COUNT={MIN_FALLBACK_COUNT}"
@@ -354,14 +361,14 @@ def main() -> int:
 
         # TC-0009: inject and detect fallback events
         print()
-        banner("TC-0009 execution", char="-")
+        banner(f"TC-0009 execution - {TC_TITLES_KO['TC-0009']}", char="-")
         tc1, tx_ids, sms_before = run_tc_0009(nifi)
         scenario.add_tc(tc1)
         fallback_count = tc1.details.get("fallback_count", 0)
 
         # TC-0010: verify SMS dispatch received fallbacks
         print()
-        banner("TC-0010 execution", char="-")
+        banner(f"TC-0010 execution - {TC_TITLES_KO['TC-0010']}", char="-")
         tc2 = run_tc_0010(tx_ids, sms_before, fallback_count)
         scenario.add_tc(tc2)
 
@@ -370,7 +377,7 @@ def main() -> int:
         nifi.close()
         db.close()
 
-    scenario.print_summary()
+    scenario.print_summary(title_ko=SCENARIO_TITLE_KO)
 
     report_path = save_json_report(SCENARIO_CODE, {
         "summary": scenario.to_dict(),
