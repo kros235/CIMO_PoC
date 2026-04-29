@@ -1,0 +1,98 @@
+{
+  "summary": {
+    "scenario_code": "TS-0005",
+    "title": "DLQ Behavior Verification",
+    "started_at": "2026-04-29T09:08:21.947693+09:00",
+    "finished_at": "2026-04-29T09:09:16.982552+09:00",
+    "total_count": 3,
+    "pass_count": 3,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0011",
+        "title": "DLQ occurrence (300 msgs, expect topic.send.dlq offset delta >= 1)",
+        "passed": true,
+        "started_at": "2026-04-29T09:08:22.051696+09:00",
+        "finished_at": "2026-04-29T09:09:11.487513+09:00",
+        "elapsed_sec": 49.44,
+        "details": {
+          "inject_count": 300,
+          "dlq_before": 196,
+          "dlq_after": 282,
+          "dlq_delta": 86,
+          "dlq_rate": "28.67%",
+          "min_threshold": 1,
+          "channels": [
+            "SMS",
+            "MMS",
+            "FAX",
+            "EMAIL"
+          ],
+          "verification": "Kafka topic.send.dlq offset delta"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0012",
+        "title": "DLQ message format (required fields present)",
+        "passed": true,
+        "started_at": "2026-04-29T09:09:11.488563+09:00",
+        "finished_at": "2026-04-29T09:09:16.898548+09:00",
+        "elapsed_sec": 5.41,
+        "details": {
+          "txId": "17774189608160311900700000000000078",
+          "resultCode": "40003",
+          "channel": "RCS",
+          "fields_present": [
+            "txId",
+            "channel",
+            "resultCode",
+            "resultMessage",
+            "dispatchedAt",
+            "deliveredAt",
+            "customerId",
+            "receiver",
+            "retryCount",
+            "disposition"
+          ],
+          "verification": "JSON parse + required fields (txId, resultCode 4xxxx or 50001)"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0013",
+        "title": "RetryJob DLQ migration log verification",
+        "passed": true,
+        "started_at": "2026-04-29T09:09:16.899174+09:00",
+        "finished_at": "2026-04-29T09:09:16.982552+09:00",
+        "elapsed_sec": 0.08,
+        "details": {
+          "retry_dlq_events_total": 3,
+          "retry_count_3_events": 3,
+          "sample_events": [
+            {
+              "txId": "17774205564440311900700000000000127",
+              "retry_count": 3
+            },
+            {
+              "txId": "17774208929220311900700000000000291",
+              "retry_count": 3
+            },
+            {
+              "txId": "17774213038740311900700000000000127",
+              "retry_count": 3
+            }
+          ],
+          "verification": "Flink log marker '최대 재시도 초과 DLQ 이동: txId='"
+        },
+        "error": null
+      }
+    ]
+  },
+  "meta": {
+    "scenario_code": "TS-0005",
+    "timestamp_kst": "2026-04-29T09:09:16+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}
