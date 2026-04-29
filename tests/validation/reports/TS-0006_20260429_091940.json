@@ -1,0 +1,100 @@
+{
+  "summary": {
+    "scenario_code": "TS-0006",
+    "title": "VOC History API Verification",
+    "started_at": "2026-04-29T09:19:40.143518+09:00",
+    "finished_at": "2026-04-29T09:19:40.395213+09:00",
+    "total_count": 4,
+    "pass_count": 4,
+    "fail_count": 0,
+    "overall_pass": true,
+    "test_cases": [
+      {
+        "tc_code": "TC-0014",
+        "title": "Single tx history query response time (< 1000ms)",
+        "passed": true,
+        "started_at": "2026-04-29T09:19:40.246931+09:00",
+        "finished_at": "2026-04-29T09:19:40.350794+09:00",
+        "elapsed_sec": 0.1,
+        "details": {
+          "tx_id": "17774213038750311900700000000000297",
+          "client_elapsed_ms": 109.0,
+          "api_self_elapsed_ms": 96.3,
+          "threshold_ms": 1000,
+          "http_status": 200,
+          "verification": "GET /api/v1/history/tx/{tx_id} response time check"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0015",
+        "title": "Single tx history response schema (required fields + pipeline_stages)",
+        "passed": true,
+        "started_at": "2026-04-29T09:19:40.351765+09:00",
+        "finished_at": "2026-04-29T09:19:40.360534+09:00",
+        "elapsed_sec": 0.01,
+        "details": {
+          "tx_id": "17774213038750311900700000000000297",
+          "channel": "SMS",
+          "status": "DELIVERED",
+          "fields_count": 16,
+          "pipeline_stages": [
+            "nifi",
+            "kafka",
+            "flink",
+            "adapter",
+            "result",
+            "db"
+          ],
+          "verification": "Required fields + pipeline_stages 6-step verification"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0016",
+        "title": "Receiver phone search (phone=01050000296)",
+        "passed": true,
+        "started_at": "2026-04-29T09:19:40.362511+09:00",
+        "finished_at": "2026-04-29T09:19:40.375211+09:00",
+        "elapsed_sec": 0.01,
+        "details": {
+          "receiver_phone": "01050000296",
+          "total": 3,
+          "items_returned": 3,
+          "client_elapsed_ms": 16.0,
+          "verification": "GET /api/v1/history/receiver/{phone} - structure + pagination"
+        },
+        "error": null
+      },
+      {
+        "tc_code": "TC-0017",
+        "title": "Metrics endpoints (success-rate + tps)",
+        "passed": true,
+        "started_at": "2026-04-29T09:19:40.377212+09:00",
+        "finished_at": "2026-04-29T09:19:40.395213+09:00",
+        "elapsed_sec": 0.02,
+        "details": {
+          "success_rate": {
+            "http_status": 200,
+            "elapsed_ms": 15.0,
+            "window": "1h",
+            "channels_count": 5
+          },
+          "tps": {
+            "http_status": 200,
+            "elapsed_ms": 0.0,
+            "window_seconds": 60,
+            "channels_count": 0
+          },
+          "verification": "Both metrics endpoints return 200 + valid schema"
+        },
+        "error": null
+      }
+    ]
+  },
+  "meta": {
+    "scenario_code": "TS-0006",
+    "timestamp_kst": "2026-04-29T09:19:40+09:00",
+    "reports_dir": "tests\\validation\\reports"
+  }
+}
