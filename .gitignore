@@ -59,3 +59,7 @@ tests/validation/reports/*.json
 
 # 백업 파일
 *.bak
+
+# Word 임시 잠금 파일 (문서 열려있을 때 생성)
+~$*.docx
+~$*.doc
