@@ -324,13 +324,24 @@ def run_tc_0008() -> TestCaseResult:
     )
 
     try:
-        current, end, lag = get_consumer_group_lag(
-            "am-flink-retry-group", "topic.send.retry",
-        )
-        print_info(f"am-flink-retry-group on topic.send.retry:")
-        print_info(f"  CURRENT-OFFSET: {current}")
-        print_info(f"  LOG-END-OFFSET: {end}")
-        print_info(f"  LAG:            {lag}")
+        # RetryJob 은 지수 백오프(30+60+120초)로 재시도를 처리하므로,
+        # 측정 순간 일시적으로 LAG>0 일 수 있다. LAG 가 0 이 될 때까지
+        # 최대 LAG_MAX_WAIT_SEC 동안 LAG_POLL_INTERVAL 간격으로 폴링한다.
+        LAG_MAX_WAIT_SEC  = 180
+        LAG_POLL_INTERVAL = 5
+
+        current, end, lag = 0, 0, -1
+        waited = 0
+        print_info(f"am-flink-retry-group on topic.send.retry (LAG polling, max {LAG_MAX_WAIT_SEC}s):")
+        while waited <= LAG_MAX_WAIT_SEC:
+            current, end, lag = get_consumer_group_lag(
+                "am-flink-retry-group", "topic.send.retry",
+            )
+            print_info(f"  [{waited:>4}s]  CURRENT={current}  END={end}  LAG={lag}")
+            if lag == 0 and end > 0:
+                break
+            time.sleep(LAG_POLL_INTERVAL)
+            waited += LAG_POLL_INTERVAL
 
         if lag == 0 and end > 0:
             tc.finish_pass(details={

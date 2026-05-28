@@ -84,6 +84,77 @@ SCENARIOS = [
     },
 ]
 
+# TC 한국어 제목 + 검증방법 (HTML 리포트 표시용)
+TC_META = {
+    "TC-0001": {
+        "title_ko": "주입한 메시지가 빠짐없이 DB에 쌓이는가",
+        "method":   "100건을 NiFi로 투입 후 180초 내 DB 최종상태 도달 건수 측정 → 100% 도달 시 정상",
+    },
+    "TC-0002": {
+        "title_ko": "모든 메시지를 ID로 추적 가능한가",
+        "method":   "투입한 35자리 txId 100건을 DB에서 역조회 → 누락 0건(100% 매칭) 시 정상",
+    },
+    "TC-0003": {
+        "title_ko": "5개 채널에 고르게 분배되는가",
+        "method":   "SMS/MMS/RCS/FAX/EMAIL 채널별 적재 비율 측정 → 각 채널 20%±10% 이내 시 정상",
+    },
+    "TC-0004": {
+        "title_ko": "한 채널이 죽어도 나머지는 살아있는가",
+        "method":   "SMS 어댑터 중단 후 나머지 4채널 16건 투입 → 60초 내 비SMS 16건 전부 최종상태 도달 + SMS 0건 발송 시 정상",
+    },
+    "TC-0005": {
+        "title_ko": "죽은 채널을 살리면 밀린 게 처리되는가",
+        "method":   "SMS 어댑터 재기동 후 적체된 4건 측정 → 60초 내 DELIVERED 95% 이상 도달 시 정상 (현재 75%, L02 한계)",
+    },
+    "TC-0006": {
+        "title_ko": "발송 실패건이 재시도 큐로 들어가는가",
+        "method":   "200건 투입 후 topic.send.retry offset 증가량 측정 → 재시도 1건 이상 발생 시 정상",
+    },
+    "TC-0007": {
+        "title_ko": "재시도된 건이 결국 끝까지 처리되는가",
+        "method":   "200건 전체의 최종상태 도달률 측정 (180초 내) → 98% 이상 도달 시 정상",
+    },
+    "TC-0008": {
+        "title_ko": "재시도 큐가 밀리지 않고 소진되는가",
+        "method":   "RetryJob Consumer Group의 미처리 잔량(LAG) 측정 → LAG=0 시 정상",
+    },
+    "TC-0009": {
+        "title_ko": "RCS 실패 시 SMS로 자동 전환되는가",
+        "method":   "RCS 200건 투입 후 Flink 로그에서 'RCS→SMS 전환' 이벤트 카운트 → 전환 1건 이상 발생 시 정상 (설계 전환율 ~7%)",
+    },
+    "TC-0010": {
+        "title_ko": "전환된 건이 실제 SMS로 재발송되는가",
+        "method":   "topic.send.dispatch.sms offset 증가량 측정 → 전환 건수만큼 SMS 토픽 인입 시 정상",
+    },
+    "TC-0011": {
+        "title_ko": "영구실패건이 DLQ로 격리되는가",
+        "method":   "300건 투입 후 topic.send.dlq offset 증가량 측정 → DLQ 1건 이상 적재 시 정상 (4xxxx 실측 발생률 ~29%)",
+    },
+    "TC-0012": {
+        "title_ko": "DLQ 메시지가 올바른 형식인가",
+        "method":   "DLQ 토픽에서 1건 추출 후 JSON 파싱 → txId(35자리) + resultCode(4xxxx) 필수 필드 존재 시 정상",
+    },
+    "TC-0013": {
+        "title_ko": "재시도 한도 초과건이 DLQ로 가는가",
+        "method":   "Flink 로그에서 '최대 재시도 초과 DLQ 이동' 로그 스캔 → retryCount=3 초과 로그 확인 시 정상 (이벤트 0건도 허용)",
+    },
+    "TC-0014": {
+        "title_ko": "상담원이 메시지를 빠르게 조회하는가",
+        "method":   "DELIVERED txId로 단건 조회 API 호출 → 응답시간 1,000ms(1초) 이내 시 정상 (실측 ~100ms)",
+    },
+    "TC-0015": {
+        "title_ko": "조회 결과에 전 구간 추적정보가 있는가",
+        "method":   "응답 JSON 필드 검사 → 16개 필드 + pipeline_stages 6단계(nifi/kafka/flink/adapter/result/db) 전부 존재 시 정상",
+    },
+    "TC-0016": {
+        "title_ko": "고객 전화번호로 발송이력을 찾는가",
+        "method":   "수신번호로 이력 검색 API 호출 → 검색 결과 1건 이상 + 페이지네이션 정상 동작 시 정상",
+    },
+    "TC-0017": {
+        "title_ko": "실시간 통계가 정상 응답하는가",
+        "method":   "성공률/TPS endpoint 각각 호출 → 둘 다 HTTP 200 + 정상 스키마(channels/window) 응답 시 정상",
+    },
+}
 
 # 경로
 SCRIPT_DIR    = Path(__file__).resolve().parent
@@ -183,9 +254,6 @@ def run_scenario(scenario):
 
 
 def load_json_report(scenario_code):
-    if report_path.stat().st_mtime < RUN_START_TIME:
-        return None    # 이번 실행 전에 만들어진 JSON 은 무시
-
     """Load latest JSON report for a scenario."""
     report_path = get_latest_json_report(scenario_code)
     if not report_path:
@@ -320,8 +388,20 @@ def generate_html_report(scenario_results, summary, output_path):
                 tc_class = "tc-pass" if tc_passed else "tc-fail"
                 tc_status = "PASS" if tc_passed else "FAIL"
                 tc_elapsed = tc.get("elapsed_sec", 0)
-                tc_title = (tc.get("title", "") or "").replace("<", "&lt;").replace(">", "&gt;")
+                tc_code_val = tc.get("tc_code", "")
                 tc_error = tc.get("error", "")
+
+                # 한국어 제목 + 검증방법 (TC_META) — 없으면 영어 title 폴백
+                meta = TC_META.get(tc_code_val, {})
+                tc_title_ko = meta.get("title_ko") or (tc.get("title", "") or "")
+                tc_method   = meta.get("method", "")
+
+                tc_title_safe  = tc_title_ko.replace("<", "&lt;").replace(">", "&gt;")
+                tc_method_safe = tc_method.replace("<", "&lt;").replace(">", "&gt;")
+
+                method_html = ""
+                if tc_method_safe:
+                    method_html = '<div class="tc-method">검증: {}</div>'.format(tc_method_safe)
 
                 error_html = ""
                 if tc_error:
@@ -331,13 +411,14 @@ def generate_html_report(scenario_results, summary, output_path):
                 tc_rows_list.append("""
                 <tr class="{cls}">
                     <td class="tc-code">{code}</td>
-                    <td class="tc-title">{title}{err}</td>
+                    <td class="tc-title">{title}{method}{err}</td>
                     <td class="tc-status">{status}</td>
                     <td class="tc-elapsed">{elapsed:.1f}s</td>
                 </tr>""".format(
                     cls=tc_class,
-                    code=tc.get("tc_code", ""),
-                    title=tc_title,
+                    code=tc_code_val,
+                    title=tc_title_safe,
+                    method=method_html,
                     err=error_html,
                     status=tc_status,
                     elapsed=tc_elapsed,
@@ -475,6 +556,12 @@ def generate_html_report(scenario_results, summary, output_path):
         .tc-table tr.tc-fail {{ background: #FFEBEE; }}
         .tc-code {{ font-family: "Consolas", monospace; color: #1565C0; }}
         .tc-elapsed {{ color: #888; font-family: "Consolas", monospace; }}
+        .tc-method {{
+            margin-top: 4px;
+            color: #666;
+            font-size: 12px;
+            line-height: 1.5;
+        }}
         .tc-error {{
             margin-top: 4px;
             padding: 6px 8px;
@@ -556,7 +643,6 @@ def generate_html_report(scenario_results, summary, output_path):
 
 
 def main():
-    RUN_START_TIME = time.time()
     parser = argparse.ArgumentParser(description="CIMO_PoC Validation Suite Runner")
     parser.add_argument("--skip", nargs="*", default=[],
                         help="시나리오 코드 (예: --skip TS-0003 TS-0004)")

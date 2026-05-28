@@ -52,3 +52,10 @@ poc/flink/target/
 # Adapter 백업 파일
 scripts/*.bak*
 scripts/*.bak
+
+# 검증 리포트 (실행 시마다 생성되는 산출물 — 코드로 재생성 가능)
+tests/validation/reports/*.html
+tests/validation/reports/*.json
+
+# 백업 파일
+*.bak
