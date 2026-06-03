@@ -92,6 +92,48 @@ if [ -f "$KAFKA_META" ] && [ -z "$(docker ps -q --filter 'name=am-kafka')" ]; th
     log_warn "ZK 가 새 ID 로 시작 시 충돌 가능. 충돌 발생 시 2단계에서 자동 복구."
 fi
 
+# >>> 추가 시작 <
+# CHANGE: 외부 도커 네트워크 자동 보장 (새 시스템 이관 즉시 사용 원칙)
+# 이유: docker-compose.monitoring.yml 과 docker-compose.adapters.yml 이
+#       'docker_am-network' 를 external 로 참조한다. base compose 와
+#       monitoring override 를 함께 띄울 때 monitoring 의 external 선언이
+#       우선 적용되므로, 네트워크가 미리 존재하지 않으면
+#       "declared as external, but could not be found" 에러로 1단계가 실패한다.
+#       새 PC 이관 직후엔 네트워크가 없으므로 여기서 자동 생성한다 (idempotent).
+EXTERNAL_NET="docker_am-network"
+if ! docker network inspect "$EXTERNAL_NET" > /dev/null 2>&1; then
+    log_warn "외부 네트워크 '$EXTERNAL_NET' 미존재 - 자동 생성"
+    docker network create "$EXTERNAL_NET" > /dev/null
+    log_pass "외부 네트워크 생성 완료: $EXTERNAL_NET"
+else
+    log_pass "외부 네트워크 존재: $EXTERNAL_NET"
+fi
+
+
+# >>> 추가 시작 <
+# CHANGE: stateless 컨테이너의 stale(Exited/Created/Restarting) 상태 자동 정리
+# 이유: 첫 기동 시도(외부 네트워크 미존재 등)에서 attach 가 실패한 컨테이너가
+#       Exited 상태로 남아 옛 네트워크 ID 를 메타데이터에 보존하면,
+#       재기동 시 docker compose 가 이를 재사용하려다
+#       "network <hash> not found" 에러로 다시 실패한다.
+#       대상은 stateless 컨테이너 6종(history-api / adapter 5종)뿐.
+#       Up 상태(unhealthy 포함)는 건드리지 않으므로 정상 운영엔 영향 없음 (idempotent).
+STALE_NAMES="am-history-api am-sms-adapter am-mms-adapter am-rcs-adapter am-fax-adapter am-email-adapter"
+STALE_CLEANED=0
+for name in $STALE_NAMES; do
+    if docker ps -a --filter "name=^${name}$" --format '{{.Names}}' | grep -q "^${name}$"; then
+        STATUS=$(docker ps -a --filter "name=^${name}$" --format '{{.Status}}')
+        if ! echo "$STATUS" | grep -q "^Up "; then
+            log_warn "stale 컨테이너 정리: $name ($STATUS)"
+            docker rm -f "$name" > /dev/null 2>&1 || true
+            STALE_CLEANED=$((STALE_CLEANED + 1))
+        fi
+    fi
+done
+if [ "$STALE_CLEANED" -eq 0 ]; then
+    log_pass "stale 컨테이너 없음 (점검 완료)"
+fi
+
 
 # ═════════════════════════════════════════════════════════
 log_step "1단계: Core 인프라 + 모니터링 기동"
