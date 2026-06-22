@@ -424,6 +424,21 @@ def _configure_processor(nifi_uuid: str, proc_def: dict) -> None:
     # JSON에 정의된 properties 가져오기
     raw_props = dict(proc_def.get("properties", {}))
 
+    # ⭐️ 신규 추가 (Day 7 Phase 2.5 병목 진단 결과 반영):
+    # "Max Concurrent Tasks" 는 NiFi 의 실제 Processor property 가 아니라
+    # 스케줄링 설정(REST API 필드명: concurrentlySchedulableTaskCount) 이다.
+    # raw_props 에 그대로 두면 아래 supported_keys 필터링에서
+    # "지원하지 않는 property" 로 판정되어 skipped 처리되며 조용히 버려진다.
+    #
+    # 실제 영향: 이 버그 때문에 send-request-flow.json 에 적어둔
+    # "Max Concurrent Tasks": "10" (ListenHTTP) 값이 지금까지 NiFi 에
+    # 한 번도 반영되지 않았고, 모든 프로세서가 NiFi 진짜 기본값인
+    # 동시처리 1 로 동작 중이었다 (Day 7 TS-0007 503 에러 / DISPATCHING
+    # 적체의 1차 원인). 여기서 미리 꺼내 따로 보관하고 raw_props 에서는
+    # 제거하여, 아래 PUT payload 의 config.concurrentlySchedulableTaskCount
+    # 로 직접 전달한다.
+    concurrent_tasks_raw = raw_props.pop("Max Concurrent Tasks", None)
+
     # property 필터링 + 이름 매핑 + 값 패치
     props: dict = {}
     skipped: list = []
@@ -473,6 +488,13 @@ def _configure_processor(nifi_uuid: str, proc_def: dict) -> None:
     defined_rels = set(proc_def.get("relationships", {}).keys())
     auto_terminate = [r for r in all_rels if r not in defined_rels]
 
+    # ⭐️ 신규 추가: concurrentlySchedulableTaskCount
+    # JSON 에 "Max Concurrent Tasks" 가 명시되어 있으면 그 값을, 없으면
+    # NiFi 기본값인 1 을 그대로 사용한다 (기존 동작과 동일하게 보존).
+    concurrent_tasks = int(concurrent_tasks_raw) if concurrent_tasks_raw else 1
+    if concurrent_tasks_raw:
+        log.info(f"      동시처리 수(concurrentlySchedulableTaskCount): {concurrent_tasks}")
+
     payload = {
         "revision": {"version": version, "clientId": "deploy-flow-script"},
         "component": {
@@ -481,6 +503,7 @@ def _configure_processor(nifi_uuid: str, proc_def: dict) -> None:
                 "properties":          props,
                 "schedulingStrategy":  proc_def.get("schedulingStrategy", "TIMER_DRIVEN"),
                 "schedulingPeriod":    proc_def.get("schedulingPeriod", "0 sec"),
+                "concurrentlySchedulableTaskCount": concurrent_tasks,
                 "autoTerminatedRelationships": auto_terminate,
             },
         },

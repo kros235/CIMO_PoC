@@ -2,6 +2,13 @@
 # AM Platform POC Kafka Topics Initialization Script
 # 실행 위치: poc/docker/ 또는 poc/config/ 어디서든 실행 가능
 # 사용법: bash ../config/kafka-topics.sh
+#
+# ⚠️ 안내 (Day 7 Phase 2.5): 이 스크립트는 scripts/start-all.sh 에서
+#   자동으로 호출되지 않는다 (Day 2 작성 당시엔 수동 1회 실행용이었음).
+#   실제 매 기동 시 토픽 생성·파티션 보정은 scripts/start-all.sh
+#   "3단계: Kafka 토픽 11개 생성" 블록이 담당하며, 그쪽이 차등 파티션
+#   수(12/6/3)와 PC 간 불일치 자동 보정 로직의 최신 기준이다.
+#   이 파일은 참고용 문서 + 수동 실행이 필요한 예외 상황 대비용으로 유지.
 
 KAFKA_CONTAINER="am-kafka"
 

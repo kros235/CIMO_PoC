@@ -142,7 +142,9 @@ log_step "1단계: Core 인프라 + 모니터링 기동"
 cd "$DOCKER_DIR"
 
 log_info "docker-compose 기동 (core + monitoring)..."
-docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d 2>&1 \
+# ⭐️ 변경: --scale taskmanager=${TASKMANAGER_REPLICAS:-2} 추가
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml \
+    up -d --scale taskmanager="${TASKMANAGER_REPLICAS:-2}" 2>&1 \
     | grep -v "the attribute .version. is obsolete" \
     | grep -v "Found orphan containers" || true
 
@@ -261,8 +263,22 @@ if [ "$KAFKA_OK" != "true" ]; then
 fi
 
 # ═════════════════════════════════════════════════════════
-log_step "3단계: Kafka 토픽 11개 생성 (idempotent)"
+log_step "3단계: Kafka 토픽 11개 생성 (idempotent) + 파티션 수 정합성 보정"
 # ═════════════════════════════════════════════════════════
+
+declare -A TOPIC_TARGET_PARTITIONS=(
+    ["topic.send.request"]=12
+    ["topic.send.dispatch.sms"]=6
+    ["topic.send.dispatch.mms"]=6
+    ["topic.send.dispatch.rcs"]=6
+    ["topic.send.dispatch.fax"]=3
+    ["topic.send.dispatch.email"]=3
+    ["topic.send.result"]=12
+    ["topic.send.retry"]=6
+    ["topic.send.dlq"]=3
+    ["topic.send.batch"]=3
+    ["topic.monitor.metrics"]=3
+)
 
 TOPICS=(
     "topic.send.request"
@@ -279,14 +295,30 @@ TOPICS=(
 )
 
 for topic in "${TOPICS[@]}"; do
+    target="${TOPIC_TARGET_PARTITIONS[$topic]}"
+
+    # 신규 생성 (이미 있으면 if-not-exists 로 건너뜀)
     docker exec am-kafka kafka-topics \
         --bootstrap-server localhost:9092 \
         --create --if-not-exists \
         --topic "$topic" \
-        --partitions 3 --replication-factor 1 2>&1 \
+        --partitions "$target" --replication-factor 1 2>&1 \
         | grep -E "Created|exists" || true
+
+    # 이미 존재하던 토픽의 파티션 수가 목표보다 적으면 증설
+    current=$(docker exec am-kafka kafka-topics \
+        --describe --topic "$topic" \
+        --bootstrap-server localhost:9092 2>/dev/null \
+        | grep -oP 'PartitionCount: *\K[0-9]+')
+
+    if [ -n "$current" ] && [ "$current" -lt "$target" ]; then
+        log_warn "  $topic: 파티션 $current개 → $target개로 증설 (PC 간 불일치 자동 보정)"
+        docker exec am-kafka kafka-topics \
+            --bootstrap-server localhost:9092 \
+            --alter --topic "$topic" --partitions "$target" 2>&1 | tail -1 || true
+    fi
 done
-log_pass "11개 토픽 확보"
+log_pass "11개 토픽 확보 (파티션 수 정합성 보정 완료)"
 
 # ═════════════════════════════════════════════════════════
 log_step "4단계: Adapter 5개 기동"
@@ -345,12 +377,11 @@ docker cp am-flink-fat.jar am-flink-jobmanager:/tmp/am-flink-fat.jar > /dev/null
 # 5-3. Job 3개 제출
 JOB_CLASSES=("SendRequestJob" "SendResultJob" "RetryJob")
 for cls in "${JOB_CLASSES[@]}"; do
-    log_info "  제출 중: $cls"
+    log_info "  제출 중: $cls (parallelism=${FLINK_JOB_PARALLELISM:-4})"
     docker exec am-flink-jobmanager flink run -d \
+        -p "${FLINK_JOB_PARALLELISM:-4}" \
         --class "com.am.platform.jobs.$cls" \
-        /tmp/am-flink-fat.jar 2>&1 \
-        | grep -v WARNING \
-        | grep "Job has been submitted" || true
+        /tmp/am-flink-fat.jar 2>&1 | grep -v WARNING | grep "Job has been submitted" || true
     sleep 3
 done
 

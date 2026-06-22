@@ -104,7 +104,7 @@ services:
       - am-network
 
   # 7. Flink TaskManager
-  # ▶ 기동 시 반드시: docker compose up -d --scale taskmanager=2
+  # ▶ 기동 시 반드시: docker compose up -d --scale taskmanager=2 , 이제 start-all.sh가 자동 처리
   taskmanager:
     image: flink:1.18.1-scala_2.12
     depends_on:
