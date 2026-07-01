@@ -601,7 +601,7 @@ def _create_connection(pg_id: str, source_uuid: str, dest_uuid: str, rel: str) -
             "selectedRelationships": [rel],
             "flowFileExpiration":     "0 sec",
             "backPressureDataSizeThreshold": "1 GB",
-            "backPressureObjectThreshold":    10000,
+            "backPressureObjectThreshold":    50000,
         },
     }
     api_post(f"/process-groups/{pg_id}/connections", payload)
