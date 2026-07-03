@@ -81,6 +81,15 @@ public class SendMessage implements Serializable {
     @JsonProperty("retryCount")
     private int retryCount;
 
+    /**
+     * Flink 파이프라인 내부 전용 플래그 (Kafka로 발행되지 않음, @JsonIgnore).
+     * true = 이 메시지는 예약 대기 중 이미 DB에 1회 INSERT됨(SCHEDULED 상태) →
+     *        최종 이력 반영 시 INSERT가 아닌 UPDATE를 사용해야 함.
+     * false(기본값) = 아직 DB에 없음 → 최초 INSERT 필요.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private boolean alreadyPersisted = false;
+
     public SendMessage() {}
 
     // ── Getters & Setters ──────────────────────────────────────────────────────
@@ -129,6 +138,9 @@ public class SendMessage implements Serializable {
 
     public int getRetryCount() { return retryCount; }
     public void setRetryCount(int retryCount) { this.retryCount = retryCount; }
+
+    public boolean isAlreadyPersisted() { return alreadyPersisted; }
+    public void setAlreadyPersisted(boolean alreadyPersisted) { this.alreadyPersisted = alreadyPersisted; }
 
     @Override
     public String toString() {

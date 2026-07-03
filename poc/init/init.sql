@@ -4,7 +4,7 @@
 -- 1. 발송 이력 메인 테이블 (msg_send_history)
 CREATE TABLE IF NOT EXISTS msg_send_history (
     id BIGSERIAL PRIMARY KEY,
-    tx_id CHAR(35) NOT NULL,
+    tx_id CHAR(35) NOT NULL UNIQUE,
     request_id VARCHAR(100),
     channel VARCHAR(20) NOT NULL,
     sender VARCHAR(50) NOT NULL,
@@ -22,8 +22,7 @@ CREATE TABLE IF NOT EXISTS msg_send_history (
 
 -- VOC 조회 최적화 인덱스 (수신번호 기준)
 CREATE INDEX IF NOT EXISTS idx_send_history_receiver ON msg_send_history(receiver, requested_at DESC);
--- 트랜잭션 ID 조회 인덱스
-CREATE INDEX IF NOT EXISTS idx_send_history_tx_id ON msg_send_history(tx_id);
+-- 트랜잭션 ID 조회 인덱스: UNIQUE 제약(위 tx_id 컬럼 정의)이 자동으로 유니크 인덱스를 만들어주므로 별도 인덱스 불필요 (중복 인덱스 제거)
 -- 상태별 조회 인덱스 (재처리 대상 필터링 용도)
 CREATE INDEX IF NOT EXISTS idx_send_history_status ON msg_send_history(status, channel);
 

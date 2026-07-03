@@ -3,6 +3,7 @@ package com.am.platform.jobs;
 import com.am.platform.model.SendMessage;
 import com.am.platform.operators.ChannelDispatchOperator;
 import com.am.platform.operators.RateLimitOperator;
+import com.am.platform.operators.ScheduleGateOperator;
 import com.am.platform.operators.ValidationOperator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -16,6 +17,9 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+
 import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
 import org.apache.flink.connector.jdbc.JdbcSink;
@@ -28,9 +32,15 @@ import org.slf4j.LoggerFactory;
  * 파이프라인:
  *   topic.send.request
  *     → ValidationOperator  (txId 검증, 채널 유효성, 필드 존재 여부)
+ *     → ScheduleGateOperator (sendMethodCode 01/02 예약 발송건 게이트 — Day 7 Phase 3 신규)
  *     → ChannelDispatchOperator (채널 정규화, 상태 DISPATCHING)
  *     → keyBy(channel) → RateLimitOperator (채널별 TPS 제어)
  *     → topic.send.dispatch.{channel} (채널별 분배 발행)
+ *
+ * 예약 발송(sendMethodCode 01/02) 처리:
+ *   - 미래 시각이 예약된 건은 ScheduleGateOperator가 붙잡아 두고, 즉시 status=SCHEDULED로
+ *     DB에 1회 INSERT한다 (VOC 즉시 조회 가능). 예약 시각이 되면 자동으로 파이프라인에
+ *     재투입되며, 이후 DB 반영은 INSERT가 아닌 UPDATE로 처리한다 (SendMessage.alreadyPersisted 참고).
  *
  * 환경변수:
  *   KAFKA_BOOTSTRAP_SERVERS  (기본: kafka:9092)
@@ -103,8 +113,22 @@ public class SendRequestJob {
                 .filter(new ValidationOperator())
                 .name("ValidationOperator");
 
+        // ── ScheduleGateOperator (예약 발송 게이트, Day 7 Phase 3 신규) ──────────
+        // txId는 유일하므로 keyBy(txId)로 파티셔닝해도 키당 최대 1건만 대기하게 되어 안전하다.
+        SingleOutputStreamOperator<SendMessage> gatedStream = validatedStream
+                .keyBy(SendMessage::getTxId)
+                .process(new ScheduleGateOperator())
+                .name("ScheduleGateOperator");
+
+        // 예약 대기 등록 시점에 즉시 발행되는 side output → SCHEDULED 상태로 DB 최초 1회 INSERT
+        DataStream<SendMessage> scheduledLogStream =
+                gatedStream.getSideOutput(ScheduleGateOperator.SCHEDULED_LOG_TAG);
+        scheduledLogStream
+                .addSink(buildScheduledLogPostgresSink())
+                .name("PostgresSink-ScheduledLog");
+
         // ── ChannelDispatchOperator ───────────────────────────────────────────
-        SingleOutputStreamOperator<SendMessage> dispatchedStream = validatedStream
+        SingleOutputStreamOperator<SendMessage> dispatchedStream = gatedStream
                 .map(new ChannelDispatchOperator())
                 .name("ChannelDispatchOperator");
 
@@ -145,8 +169,18 @@ public class SendRequestJob {
                 .sinkTo(buildKafkaSink(TOPIC_DISPATCH_EMAIL))
                 .name("KafkaSink-EMAIL");
 
-        // PostgreSQL 발송 요청 이력 INSERT
-        rateLimitedStream.addSink(buildPostgresSink()).name("PostgresSink-Request");
+        // PostgreSQL 발송 요청 이력 반영
+        // - alreadyPersisted=false (실시간/준실시간, 또는 예약시각이 이미 지난 배치건): 최초 INSERT
+        // - alreadyPersisted=true  (예약 대기를 거쳐온 건, ScheduleGateOperator가 SCHEDULED로 이미 INSERT함): UPDATE만 수행
+        rateLimitedStream
+                .filter(msg -> !msg.isAlreadyPersisted())
+                .addSink(buildPostgresSink())
+                .name("PostgresSink-Request");
+
+        rateLimitedStream
+                .filter(SendMessage::isAlreadyPersisted)
+                .addSink(buildPostgresReleaseUpdateSink())
+                .name("PostgresSink-ScheduledRelease");
 
         LOG.info("[SendRequestJob] Job 시작: bootstrapServers={}, groupId={}",
                 BOOTSTRAP_SERVERS, GROUP_ID);
@@ -163,7 +197,8 @@ public class SendRequestJob {
                 "INSERT INTO msg_send_history " +
                 "(tx_id, channel, status, sender, receiver, " +
                 " retry_count, source, requested_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW()) " +
+                "ON CONFLICT (tx_id) DO NOTHING",
                 (ps, msg) -> {
                     ps.setString(1, msg.getTxId());
                     ps.setString(2, msg.getChannel());
@@ -172,6 +207,72 @@ public class SendRequestJob {
                     ps.setString(5, msg.getReceiver());
                     ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
+                },
+                JdbcExecutionOptions.builder()
+                        .withBatchSize(100)
+                        .withBatchIntervalMs(200)
+                        .withMaxRetries(3)
+                        .build(),
+                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                        .withUrl(POSTGRES_URL)
+                        .withDriverName("org.postgresql.Driver")
+                        .withUsername(POSTGRES_USER)
+                        .withPassword(POSTGRES_PASS)
+                        .build()
+        );
+    }
+
+    /**
+     * 예약 발송 대기 등록 시점에 SCHEDULED 상태로 1회 INSERT하는 Sink.
+     * (ScheduleGateOperator의 side output, 즉 예약 대기가 시작되는 시점에만 호출됨)
+     */
+    private static org.apache.flink.streaming.api.functions.sink.SinkFunction<SendMessage>
+            buildScheduledLogPostgresSink() {
+        return JdbcSink.sink(
+                "INSERT INTO msg_send_history " +
+                "(tx_id, channel, status, sender, receiver, " +
+                " retry_count, source, scheduled_at, requested_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                "ON CONFLICT (tx_id) DO NOTHING",
+                (ps, msg) -> {
+                    ps.setString(1, msg.getTxId());
+                    ps.setString(2, msg.getChannel());
+                    ps.setString(3, msg.getStatus()); // ScheduleGateOperator가 "SCHEDULED"로 설정해둠
+                    ps.setString(4, msg.getSender());
+                    ps.setString(5, msg.getReceiver());
+                    ps.setInt(6, msg.getRetryCount());
+                    ps.setString(7, msg.getSource());
+                    ps.setTimestamp(8, Timestamp.from(Instant.parse(msg.getScheduledAt())));
+                    // requestedAt이 요청 전문에 있으면 그 값을, 없으면 현재 시각(=예약 접수 시각)을 사용
+                    ps.setTimestamp(9, msg.getRequestedAt() != null && !msg.getRequestedAt().trim().isEmpty()
+                            ? Timestamp.from(Instant.parse(msg.getRequestedAt()))
+                            : Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())));
+                },
+                JdbcExecutionOptions.builder()
+                        .withBatchSize(100)
+                        .withBatchIntervalMs(200)
+                        .withMaxRetries(3)
+                        .build(),
+                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                        .withUrl(POSTGRES_URL)
+                        .withDriverName("org.postgresql.Driver")
+                        .withUsername(POSTGRES_USER)
+                        .withPassword(POSTGRES_PASS)
+                        .build()
+        );
+    }
+
+    /**
+     * 예약 시각 도래로 파이프라인에 재투입된 건의 상태를 갱신하는 Sink.
+     * INSERT가 아닌 UPDATE — 해당 tx_id row는 buildScheduledLogPostgresSink()에서 이미 생성됨.
+     */
+    private static org.apache.flink.streaming.api.functions.sink.SinkFunction<SendMessage>
+            buildPostgresReleaseUpdateSink() {
+        return JdbcSink.sink(
+                "UPDATE msg_send_history SET status = ?, dispatched_at = NOW() WHERE tx_id = ?",
+                (ps, msg) -> {
+                    ps.setString(1, msg.getStatus()); // ChannelDispatchOperator가 "DISPATCHING"으로 갱신해둠
+                    ps.setString(2, msg.getTxId());
                 },
                 JdbcExecutionOptions.builder()
                         .withBatchSize(100)
