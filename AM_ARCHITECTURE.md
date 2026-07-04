@@ -2,10 +2,10 @@
 
 ### MIMO·CI 통합 AM을 통한 초대용량 발송 플랫폼 고도화
 
-> **문서 버전:** v0.4 (Day 7 성능 테스트 결과 반영)
+> **문서 버전:** v0.5 (Day 7 Phase 3 — 예약 발송 기능 + tx_id 중복 조치 완료 반영)
 > **최초 작성일:** 2026-03-24
-> **최종 수정일:** 2026-07-01
-> **상태:** POC Day 6 완료 (Day 7 성능 테스트 — 실시간 단독 파트 완료, 배치·혼합 시나리오 진행 예정)
+> **최종 수정일:** 2026-07-05
+> **상태:** POC Day 6 완료, Day 7 실시간·예약 발송 파트 완료 (배치·혼합 시나리오 진행 예정)
 
 ---
 
@@ -1288,12 +1288,47 @@ POC가 Windows 환경에서 개발되면서 발견된 환경 특이사항:
 
 Day 7 전 측정에서 공통적으로 `DISPATCHING` 상태 78~88%, `DELIVERED` 상태 12~22%로 나타났다. Adapter CPU는 1~7%로 여유가 있어 Adapter 자체의 처리 지연은 아니며, §16.3.5·기존 L02(DISPATCHING 상태 고착, `SendResultJob` UPDATE 일부 누락)와 동일 계열 문제로 추정된다. Day 8에서 L01~L04와 함께 근본 원인을 분석한다.
 
-### 16.6 Day 7 남은 검증 항목 (배치·혼합 시나리오)
+### 16.6 Day 7 Phase 3 완료 결과 — 예약 발송 기능 + tx_id 중복 원인분석·조치 (2026-07-05)
 
-- ⏳ **시나리오 B (배치성 발송, TS-0008)**: 100만 건 배치 처리 시간, 예약 시각 정확도(±60초 이내)
+#### 16.6.1 Flink 예약 발송 기능 (`ScheduleGateOperator`)
+
+`sendMethodCode` 01/02(배치·예약성) 건을 위한 Timer 기반 예약 대기 로직을 `SendRequestJob.java` 파이프라인에 추가했다 (커밋 `b50908c`).
+
+- **동작 방식**: `ValidationOperator` 통과 후 신규 `ScheduleGateOperator`(`KeyedProcessFunction`, key=txId)가 개입 → `sendMethodCode` 01/02 + 미래 예약시각이면 ① 즉시 `status=SCHEDULED`로 이력 1회 INSERT(VOC 즉시 조회 가능) ② Flink 내부 상태에 보관, Timer 등록 ③ 예약 시각 도래 시 자동으로 `ChannelDispatchOperator` 이후 정규 파이프라인으로 흘려보냄
+- **정합성 보강**: `tx_id`당 row 1개 유지 원칙에 따라, 해제 시점에는 INSERT가 아닌 UPDATE로 처리 (`alreadyPersisted` 플래그로 구분)
+- **배포 검증**: Flink UI Job Graph에서 `ScheduleGateOperator` 노드 및 `PostgresSink-ScheduledLog` Sink 육안 확인 완료 (§16.2.5 원칙에 따름 — 로그만으로 판단하지 않음)
+
+#### 16.6.2 tx_id 중복 INSERT 발견 및 원인분석
+
+위 기능 구현 과정에서 `tx_id` UNIQUE 제약을 추가하려던 중, **기존 Day 7 부하 테스트 데이터에서 73개 tx_id(146 row)가 정확히 2번씩 INSERT된 사실**을 발견했다.
+
+- **정리**: id가 작은(최초 요청) row만 남기고 73건 DELETE, 이후 `tx_id UNIQUE` 제약 추가
+- **데이터 정합성**: 중복 row의 `dispatched_at`이 마이크로초 단위까지 완전히 동일 → 발송 결과 자체의 유실·오염은 없었음을 확인
+- **원인 분석 (가장 유력한 설명, 100% 확정은 아님 — 근거: 당시 NiFi/Kafka 로그는 로테이션되어 소실)**:
+  - 클라이언트(`load_injector.py`, `tx_generator.py`) 코드는 생성 시점 이후 수정 이력 없음 → 중복 유발 로직 없음 확인
+  - NiFi 플로우의 `PublishKafka` `failure` 관계는 로그 프로세서로만 연결, 자기 자신에게 재연결(자동 재시도 루프) 없음 확인
+  - `PublishKafka`가 `acks=all` + `Guarantee Replicated Delivery`로 설정되어 있어, 이미 확정된 단일 Kafka 브로커 병목(§16.5.2, 부하 시 CPU 51~121%) 상황에서 응답 지연 시 NiFi 내부 Kafka 프로듀서가 자체 재전송했을 가능성이 가장 유력함
+  - `enable.idempotence` 미설정 상태라 재전송 시 중복이 걸러지지 않았음
+
+#### 16.6.3 근본 조치 — `enable.idempotence` 적용
+
+- **변경**: `poc/nifi/send-request-flow.json`의 `PublishKafka`에 `enable.idempotence: true` 추가, `poc/nifi/deploy_flow.py`의 `DYNAMIC_PROPERTY_TYPES`에 `PublishKafka_2_6` 추가 (사전 정의 property 목록에 없어 §16.2.5와 동일한 "조용한 무시" 버그로 누락될 뻔했던 것을 방지) — 커밋 `c56b20f`
+- **재검증 (TS-0007 재실행, 2026-07-05)**:
+
+| 항목 | 1차 (배경 프로세스 실행 중) | 2차 (배경 프로세스 종료 후) | idempotence 적용 전 (참고) |
+|------|---------------------------|----------------------------|---------------------------|
+| achieved TPS | 262.3 | 511.3 | 469 |
+| p95 지연 | 2,547ms | 906ms | 1,140ms |
+| DB 도달률 | 84.7% | 100% | 52.5~100% |
+| tx_id 중복 | - | **0건** | 73건 발생 이력 있음 |
+
+- **결론**: 1차 결과만 보면 "idempotence가 성능을 저하시켰다"는 가설이 유력해 보였으나, 2차(배경 프로세스 종료 후) 재측정 결과 기존 기록과 동등하거나 더 나은 성능이 확인되어 **해당 가설은 기각**한다. 1차 저하의 실제 원인은 데스크탑A(i5-6600, 4코어) 위에서 동시 실행 중이던 무관한 프로세스의 CPU 경합으로 판단된다. **tx_id 중복은 0건으로 완전히 해소되었고, 성능 손해는 없었다.**
+
+### 16.7 Day 7 남은 검증 항목 (배치·혼합 시나리오)
+
+- ⏳ **시나리오 B (배치성 발송, TS-0008)**: 100만 건 배치 처리 시간, 예약 시각 정확도(±60초 이내) — §16.6.1 예약 발송 기능이 선행 완료되어 이제 테스트 가능
 - ⏳ **시나리오 C (복합 발송, TS-0009)**: 실시간+배치 동시 투입 시 상호 영향, Kafka 토픽 파티션 격리 효과
-- ⏳ **Day 7 Phase 3 후속**: Flink 예약 발송 기능(`SendRequestJob.java`에 Timer 기반 `sendMethodCode` 01/02 분기 추가) — 위 배치 시나리오 테스트의 선행 작업
 
 ---
 
-*문서 끝 — 다음 업데이트: TS-0008(배치), TS-0009(혼합) 부하 테스트 완료 후 실측 수치 반영 예정 (v0.5)*
+*문서 끝 — 다음 업데이트: TS-0008(배치), TS-0009(혼합) 부하 테스트 완료 후 실측 수치 반영 예정 (v0.6)*
