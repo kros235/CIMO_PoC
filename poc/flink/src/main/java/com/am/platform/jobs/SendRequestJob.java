@@ -19,6 +19,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 
 import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
@@ -242,10 +243,12 @@ public class SendRequestJob {
                     ps.setString(5, msg.getReceiver());
                     ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
-                    ps.setTimestamp(8, Timestamp.from(Instant.parse(msg.getScheduledAt())));
+                    // OffsetDateTime.parse(): UTC(...Z)와 시간대 포함(...+09:00) 형식 모두 지원
+                    // (Instant.parse()는 UTC(Z)만 지원해 +09:00 형식에서 예외가 발생하던 버그 수정)
+                    ps.setTimestamp(8, Timestamp.from(OffsetDateTime.parse(msg.getScheduledAt()).toInstant()));
                     // requestedAt이 요청 전문에 있으면 그 값을, 없으면 현재 시각(=예약 접수 시각)을 사용
                     ps.setTimestamp(9, msg.getRequestedAt() != null && !msg.getRequestedAt().trim().isEmpty()
-                            ? Timestamp.from(Instant.parse(msg.getRequestedAt()))
+                            ? Timestamp.from(OffsetDateTime.parse(msg.getRequestedAt()).toInstant())
                             : Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())));
                 },
                 JdbcExecutionOptions.builder()
