@@ -100,6 +100,9 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-am_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-am_password}
       - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin_password}@mongodb:27017/${POSTGRES_DB:-am_db}?authSource=admin
+    volumes:
+      # ⭐️ 신규: com.am.platform DEBUG 로거 포함 설정으로 컨테이너 기본 로그 설정 덮어쓰기
+      - ../flink/conf/log4j-console.properties:/opt/flink/conf/log4j-console.properties
     networks:
       - am-network
 
@@ -119,6 +122,10 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-am_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-am_password}
       - MONGODB_URI=mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD:-admin_password}@mongodb:27017/${POSTGRES_DB:-am_db}?authSource=admin
+    volumes:
+      # ⭐️ 신규: jobmanager와 동일한 이유로 taskmanager에도 동일하게 마운트
+      # (RateLimitOperator 등 실제 로직이 도는 곳은 taskmanager이므로 이쪽이 더 중요)
+      - ../flink/conf/log4j-console.properties:/opt/flink/conf/log4j-console.properties
     networks:
       - am-network
 
