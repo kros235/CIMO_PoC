@@ -11,7 +11,7 @@ import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
 /**
@@ -111,7 +111,10 @@ public class ScheduleGateOperator extends KeyedProcessFunction<String, SendMessa
         }
 
         try {
-            long triggerAtMillis = Instant.parse(scheduledAt.trim()).toEpochMilli();
+            // OffsetDateTime.parse() 는 UTC(...Z)와 시간대 포함(...+09:00) 형식을
+            // 모두 정확히 처리한다 (Instant.parse()는 UTC(Z) 형식만 지원하여
+            // 시간대 포함 문자열에서 DateTimeParseException 이 발생하던 버그를 수정).
+            long triggerAtMillis = OffsetDateTime.parse(scheduledAt.trim()).toInstant().toEpochMilli();
             if (triggerAtMillis <= nowMillis) {
                 // 이미 지난 예약시각 → 즉시 처리로 폴백
                 LOG.debug("[ScheduleGateOperator] 예약시각이 이미 지남, 즉시 처리: txId={}, scheduledAt={}",
