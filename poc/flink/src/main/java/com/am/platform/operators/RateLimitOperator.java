@@ -129,6 +129,14 @@ public class RateLimitOperator extends KeyedProcessFunction<String, SendMessage,
             }
             pendingQueueState.put(channel, remaining);
 
+            // ⭐️ 버그 수정 (TS-0008 TC-0025 예약 정확도 진단 중 발견):
+            // 새 윈도우는 이 타이머 시각(timestamp)부터 시작되고, 그 안에서 이미
+            // released건을 내보냈다. 기존 코드는 이 사실을 기록하지 않고 무조건
+            // count를 0으로 리셋해서, 이 직후 도착하는 신규 메시지가 "이번 윈도우엔
+            // 아직 아무것도 안 나갔다"고 착각해 한도를 무시하고 즉시 통과할 수 있었다.
+            windowStartState.put(channel, timestamp);
+            countState.put(channel, released);
+
             // 아직 남은 메시지가 있으면 다음 윈도우 타이머 재등록
             if (!remaining.isEmpty()) {
                 ctx.timerService().registerProcessingTimeTimer(timestamp + WINDOW_SIZE_MS);
@@ -136,15 +144,6 @@ public class RateLimitOperator extends KeyedProcessFunction<String, SendMessage,
 
             LOG.debug("[RateLimitOperator] 타이머 방출: channel={}, released={}, remaining={}",
                     channel, released, remaining.size());
-        }
-
-        // 현재 윈도우 카운트 리셋
-        for (String channel : countState.keys()) {
-            countState.put(channel, 0);
-        }
-        // 윈도우 시작 시각 갱신
-        for (String channel : windowStartState.keys()) {
-            windowStartState.put(channel, timestamp);
         }
     }
 
