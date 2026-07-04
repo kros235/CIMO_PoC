@@ -276,6 +276,7 @@ DYNAMIC_PROPERTY_TYPES = {
     "org.apache.nifi.processors.standard.EvaluateJsonPath",   # txId, channel 등 JSON path 추출
     "org.apache.nifi.processors.attributes.UpdateAttribute",  # am.received.at 등 attribute 추가
     "org.apache.nifi.processors.standard.RouteOnAttribute",   # txid_valid 등 routing 조건
+    "org.apache.nifi.processors.kafka.pubsub.PublishKafka_2_6",   # ⭐️ 신규
 }
 
 # ⭐️ 신규 추가: NiFi 지원 Processor 타입 및 번들 정보 조회

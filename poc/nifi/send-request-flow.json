@@ -122,7 +122,8 @@
         "Request Max Bytes":    "1048576",
         "Compression Type":     "snappy",
         "acks":                 "all",
-        "Max Concurrent Tasks": "4"
+        "Max Concurrent Tasks": "4",
+        "enable.idempotence":   "true"
       },
       "relationships": {
         "success": "proc-log-success",
