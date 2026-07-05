@@ -4,6 +4,16 @@
 #
 # 전제 조건: poc/docker/docker-compose.yml 로 인프라(Kafka 등)가 먼저 기동되어 있어야 한다.
 # 공유 네트워크 am-network 는 docker-compose.yml 에서 생성된 것을 사용한다.
+#
+# ⭐️ 변경(Day 8 작업4-5): 5개 Adapter 전부 healthcheck 명령을 curl에서
+# python3 내장 기능으로 교체했다. Adapter는 python:3.11-slim이라는
+# 가벼운 기본 이미지를 쓰는데, 이 이미지엔 curl이 설치되어 있지 않다.
+# 그래서 기존 healthcheck(curl -f ...)는 컨테이너 안에서 매번
+# "명령어를 찾을 수 없음"으로 실패했고, Docker는 이를 실제 서버 장애로
+# 오해해 "unhealthy"로 표시했다 — 정작 밖에서 포트로 직접 확인하면
+# 정상 응답(200)이 나오던 이유. curl을 새로 설치하는 대신(이미지
+# 용량 증가, 설치 중 네트워크 의존성 발생), 파이썬에 이미 내장된
+# urllib으로 대체해 문제를 해결했다.
 
 version: "3.8"
 
@@ -32,7 +42,7 @@ services:
       - am-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8101/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8101/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -60,7 +70,7 @@ services:
       - am-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8102/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8102/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -89,7 +99,7 @@ services:
       - am-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8103/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8103/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -117,7 +127,7 @@ services:
       - am-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8104/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8104/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -145,7 +155,7 @@ services:
       - am-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8105/health"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8105/health', timeout=3).status == 200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 3
