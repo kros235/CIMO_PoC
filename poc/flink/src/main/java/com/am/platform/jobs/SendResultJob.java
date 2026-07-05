@@ -135,12 +135,21 @@ public class SendResultJob {
                 .sinkTo(buildKafkaSink(TOPIC_RETRY))
                 .name("KafkaSink-Retry");
 
-        // ── DLQ: dlq 토픽 발행 ───────────────────────────────────────────────
-        resultStream
+        // ── DLQ: dlq 토픽 발행 + 데이터베이스 최종 상태 기록 ───────────────────
+        // ⭐️ 변경(Day 8 작업4): 기존엔 DLQ(완전 실패) 판정 건이 카프카로만
+        // 발행되고 데이터베이스는 전혀 갱신되지 않아, 이 건들은 상태가 영원히
+        // 최초값(DISPATCHING)에 고착되는 문제가 있었다(발송 상태 고착 문제의
+        // 원인 중 하나). DLQ 판정 시에도 최종 상태를 기록하도록 Sink를 추가한다.
+        SingleOutputStreamOperator<SendResult> dlqStream = resultStream
                 .filter(r -> ResultCodeClassifier.DISPOSITION_DLQ.equals(r.getDisposition()))
+                .name("Filter-DLQ");
+
+        dlqStream
                 .map(r -> MAPPER.writeValueAsString(r))
                 .sinkTo(buildKafkaSink(TOPIC_DLQ))
                 .name("KafkaSink-DLQ");
+
+        dlqStream.addSink(buildDlqPostgresSink()).name("PostgresSink-DLQ");
 
         // ── 1분 Tumbling Window 집계 → PostgreSQL msg_send_metrics ────────────
         resultStream
@@ -157,9 +166,17 @@ public class SendResultJob {
     // ── PostgreSQL 이력 업데이트 Sink ─────────────────────────────────────────
     private static SinkFunction<SendResult> buildPostgresSink() {
         return JdbcSink.sink(
+                // ⭐️ 변경(Day 8 작업4): retry_count, channel 컬럼 추가.
+                // 기존엔 이 두 컬럼이 UPDATE 대상에서 빠져 있어, 재시도를 몇 번 했든
+                // 최종 기록에는 항상 0으로 남고(재시도 횟수 미기록 문제), RCS에서
+                // SMS로 바뀐 뒤 최종 성공해도 channel이 최초값(RCS)에 머물러
+                // 있었다(채널 정보 미기록 문제). result 객체는 이 시점에 이미
+                // 최신 재시도 횟수·채널 값을 담고 있으므로(RetryJob이 재발송 시
+                // 함께 실어 보냄), 그대로 반영하면 된다.
                 "UPDATE msg_send_history SET " +
                 "  status = ?, result_code = ?, " +
-                "  dispatched_at = ?, delivered_at = ? " +
+                "  dispatched_at = ?, delivered_at = ?, " +
+                "  retry_count = ?, channel = ? " +
                 "WHERE tx_id = ?",
                 (ps, result) -> {
                     ps.setString(1, ResultCodeClassifier.isSuccess(result.getResultCode()) ? "DELIVERED" : "FAILED");
@@ -168,6 +185,41 @@ public class SendResultJob {
                             ? Timestamp.from(java.time.ZonedDateTime.parse(result.getDispatchedAt()).toInstant()) : null);
                     ps.setTimestamp(4, result.getDeliveredAt() != null
                             ? Timestamp.from(java.time.ZonedDateTime.parse(result.getDeliveredAt()).toInstant()) : null);
+                    ps.setInt(5, result.getRetryCount());
+                    ps.setString(6, result.getChannel());
+                    ps.setString(7, result.getTxId());
+                },
+                JdbcExecutionOptions.builder()
+                        .withBatchSize(100)
+                        .withBatchIntervalMs(200)
+                        .withMaxRetries(3)
+                        .build(),
+                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                        .withUrl(POSTGRES_URL)
+                        .withDriverName("org.postgresql.Driver")
+                        .withUsername(POSTGRES_USER)
+                        .withPassword(POSTGRES_PASS)
+                        .build()
+        );
+    }
+
+    /**
+     * ⭐️ 신규(Day 8 작업4): DLQ(완전 실패) 판정 건의 최종 상태를 데이터베이스에
+     * 기록하는 Sink. status를 disposition 이름과 동일하게 "DLQ"로 남겨,
+     * "발송 중" 상태에서 더 이상 안 바뀌던 문제를 해결한다.
+     */
+    private static SinkFunction<SendResult> buildDlqPostgresSink() {
+        return JdbcSink.sink(
+                "UPDATE msg_send_history SET " +
+                "  status = 'DLQ', result_code = ?, " +
+                "  dispatched_at = ?, retry_count = ?, channel = ? " +
+                "WHERE tx_id = ?",
+                (ps, result) -> {
+                    ps.setString(1, result.getResultCode());
+                    ps.setTimestamp(2, result.getDispatchedAt() != null
+                            ? Timestamp.from(java.time.ZonedDateTime.parse(result.getDispatchedAt()).toInstant()) : null);
+                    ps.setInt(3, result.getRetryCount());
+                    ps.setString(4, result.getChannel());
                     ps.setString(5, result.getTxId());
                 },
                 JdbcExecutionOptions.builder()

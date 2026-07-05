@@ -63,3 +63,9 @@ tests/validation/reports/*.json
 # Word 임시 잠금 파일 (문서 열려있을 때 생성)
 ~$*.docx
 ~$*.doc
+
+# ⭐ 신규(Day 8): git am으로 적용 후 남는 패치 파일 (저장소 루트에 쌓임)
+*.patch
+
+# ⭐ 신규(Day 8): 부하 테스트 리포트 산출물 (실행 시마다 생성되는 산출물 — 코드로 재생성 가능)
+tests/load/reports/*.json
