@@ -160,12 +160,26 @@ final class RequestPipelineBuilder {
         // 크다. setMaxParallelism을 일꾼 수와 똑같이 5로 맞추면 버킷 1개 =
         // 일꾼 1명이 되어 겹칠 확률이 크게 줄어든다(완전한 보장은 아니며,
         // 배포 후 Flink UI Subtask Metrics로 실제 분배를 다시 확인해야 한다).
+        // ⭐️ 추가 변경(Day 8 작업3, 재재검증 중 발견): maxParallelism을 일꾼
+        // 수(5)와 똑같이 맞췄는데도, 재배포 후 Flink UI에서 확인한 결과 매번
+        // 정확히 똑같은 모양(MMS와 FAX가 항상 같은 일꾼에 겹치고, 일꾼 하나는
+        // 항상 할 일이 없음)이 반복됐다. Flink의 배정 계산은 무작위가 아니라
+        // 고정된 공식이라서, 이 5개 채널 이름 문자열과 "통 개수 5개" 조합에서는
+        // 항상 이렇게 겹치도록 계산된다(운이 나빴던 게 아니라 결정적인 결과).
+        //
+        // Flink가 실제 사용하는 계산 공식(MurmurHash 기반 KeyGroup 배정)을
+        // 파이썬으로 그대로 재현해서 직접 검증한 결과:
+        //   maxParallelism=5  → SMS=3, MMS=1, RCS=0, FAX=1(MMS와 겹침), EMAIL=2
+        //   maxParallelism=15 → SMS=4, MMS=3, RCS=1, FAX=2, EMAIL=0 (전부 다름 ✅)
+        // "통 개수"는 일꾼 수와 똑같을 필요가 없고, 이 5개 채널 이름이 겹치지
+        // 않는 숫자면 된다. 15로 지정한다(채널 이름이 나중에 바뀌면 이 계산을
+        // 다시 해봐야 한다는 점에 유의).
         SingleOutputStreamOperator<SendMessage> rateLimitedStream = dispatchedStream
                 .keyBy(SendMessage::getChannel)
                 .process(new RateLimitOperator())
                 .name("RateLimitOperator-" + jobLabel)
                 .setParallelism(CHANNEL_COUNT)
-                .setMaxParallelism(CHANNEL_COUNT);
+                .setMaxParallelism(15);
 
         // ── 채널별 Kafka Sink 분배 ─────────────────────────────────────────────
         // ⭐️ 변경: 위 RateLimitOperator와 병렬도를 맞춰야 Flink가 두 단계를
