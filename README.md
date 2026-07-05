@@ -522,7 +522,7 @@ curl http://localhost:8200/health
 
 ## Day 8 — 알려진 한계 분석 및 아키텍처 개선
 
-**상태: ✅ 작업 1·2·3 완료 / 작업 4(기존 알려진 한계 L01~L04 분석) 착수**
+**상태: ✅ 작업 1·2·3 완료 / 🔄 작업 4(기존 알려진 한계 L01~L04 분석) 진행 중 — L01·L02·L04 통합 원인 확정, 수정 범위 확인 대기**
 
 #### 작업 1 — 실시간·배치 요청 라인 완전 분리 (방안 A)
 
@@ -585,18 +585,25 @@ curl http://localhost:8200/health
 
 ---
 
-## 알려진 한계 (Day 8 분석 대상)
+## 알려진 한계 (Day 8 작업 4 — 분석 중)
 
-Day 6 통합 테스트 과정에서 식별된 PoC 동작 한계. Day 8 에서 근본 원인 분석 + 문서화 예정.
+Day 6 통합 테스트 과정에서 식별된 PoC 동작 한계. 실제 코드(`SendResultJob.java`, `RetryJob.java`, `ResultCodeClassifier.java`)를 직접 확인하여 원인을 규명 중.
 
-| ID | 한계 | 관찰 | 추정 원인 |
+| ID | 한계 | 관찰 | 확정된 원인 |
 |----|------|------|----------|
-| L01 | retry_count 미갱신 | DB `retry_count` 항상 0 | SendResultJob UPDATE 대상 4컬럼에 미포함 (의도된 PoC 단순화) |
-| L02 | DISPATCHING 상태 고착 | TC-0007 에서 200건 중 46% DISPATCHING 잔류 (확률적 발현) | SendResultJob 의 status UPDATE(DISPATCHING→DELIVERED) 일부 메시지 누락 |
-| L03 | DISPATCHING 다중 해석 | 시나리오별 terminal vs DELIVERED 기준 상이 | 검증 기준 일관화 필요 |
-| L04 | Fallback 후 channel 미갱신 | RCS→SMS 전환 시 DB channel 값 RCS 유지 | SendResultJob fallback 분기 channel 미반영 |
+| L01 | retry_count 미갱신 | DB `retry_count` 항상 0 | **원인 확정**: `SendResultJob`의 성공(STORE) 시 UPDATE문에 `retry_count` 컬럼 자체가 빠져있음. 재시도를 몇 번 했든 최종 기록에는 반영되지 않음 |
+| L02 | DISPATCHING 상태 고착 | TC-0007 에서 200건 중 46% DISPATCHING 잔류 (확률적 발현) | **원인 확정 (부분)**: `SendResultJob`은 성공(STORE) 판정일 때만 데이터베이스를 갱신함. 재시도(RETRY)·대체발송(FALLBACK)·완전실패(DLQ) 판정 건은 데이터베이스를 전혀 건드리지 않아, DLQ로 끝난 건은 상태가 영원히 DISPATCHING으로 고착됨. 다만 46% 중 일부는 재시도가 아직 진행 중인 상태(최대 3분 30초까지 소요 가능)에서 측정했을 뿐인 정상 동작일 가능성도 있어, 측정 타이밍 문제와 섞여있을 수 있음 |
+| L03 | DISPATCHING 다중 해석 | 시나리오별 terminal vs DELIVERED 기준 상이 | 코드 버그가 아니라 테스트 설계·검증 기준 정리 필요 사항으로 확인. 별도 코드 수정 불필요 |
+| L04 | Fallback 후 channel 미갱신 | RCS→SMS 전환 시 DB channel 값 RCS 유지 | **원인 확정**: 채널을 SMS로 바꾸는 처리는 메모리상에서만 일어나고 데이터베이스에 반영하는 코드가 없음(L02와 같은 이유). 나중에 SMS로 재발송해서 최종 성공하더라도, 성공 시 UPDATE문에 channel 컬럼도 빠져있어 끝까지 반영되지 않음 |
 
-**기타 관찰 (Day 8 분석):**
+**L01·L02·L04는 하나의 같은 원인에서 나온 것으로 확인됨**: `SendResultJob`의 데이터베이스 갱신 로직이 "성공(STORE)" 판정 시에만 동작하도록 되어 있고, 그 UPDATE문에도 `retry_count`·`channel` 컬럼이 빠져있음. 재시도·대체발송·완전실패 경로는 데이터베이스를 아예 갱신하지 않음.
+
+**제안하는 수정 방향 (사용자 확인 대기 중)**:
+1. 성공(STORE) 시 UPDATE문에 `retry_count`, `channel` 컬럼 추가 (L01, L04 해결)
+2. 완전실패(DLQ) 판정 시에도 데이터베이스에 최종 상태를 기록하는 코드 신규 추가 (L02의 "영원히 고착" 문제 해결)
+3. 재시도 진행 중인 건은 그대로 DISPATCHING으로 둘지, "RETRYING" 같은 중간 상태로 별도 표시할지 — 이 부분만 사용자 확인 필요
+
+**기타 관찰 (분석 예정):**
 - Mock Adapter healthcheck "unhealthy" 표시 (실제 8101~8105 응답 200 정상)
 - 4xxxx 영구실패율 실측 ~29% (adapter_base 설계 ~2% 대비 높음)
 - EMAIL 성공률 22% (FAX 90% 대비 낮음 — adapter 분포 재확인 필요)

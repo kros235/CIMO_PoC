@@ -2,10 +2,10 @@
 
 ### MIMO·CI 통합 AM을 통한 초대용량 발송 플랫폼 고도화
 
-> **문서 버전:** v0.14 (Day 8 작업3 최종 결론 반영 — 6가지 조치에도 개선 안 됨, 하드웨어 한계로 이월. 16.14번 항목)
+> **문서 버전:** v0.15 (Day 8 작업4 진행 중 반영 — L01·L02·L04 통합 원인 확정, 16.15번 항목)
 > **최초 작성일:** 2026-03-24
 > **최종 수정일:** 2026-07-05
-> **상태:** POC Day 7 완료. Day 8 작업1·작업2·작업3 완료. 작업4(기존 알려진 한계 L01~L04 분석) 착수
+> **상태:** POC Day 7 완료. Day 8 작업1·작업2·작업3 완료. 작업4 진행 중 — L01·L02·L04 원인 확정, 수정 범위 확인 대기
 
 ---
 
@@ -1526,6 +1526,39 @@ Day 8에서 `docker stats`로 재확인한 결과, **원인이 확정되었다.*
 
 **작업 3 마무리 방침**: 사용자 확정에 따라, 이번 여섯 가지 조치(코드 품질·자원 배분 측면에서는 실제로 유효한 개선들이며 되돌리지 않는다)를 완료로 처리하고, 남은 성능 격차(99% 목표 대비 부족분)는 이전 두 작업과 동일하게 실 서버 환경에서의 하드웨어 확장(NiFi 클러스터화, Kafka 멀티 브로커, Flink TaskManager 증설 등)이 필요한 사항으로 이월한다. PoC 환경에서 이 수치를 억지로 99%까지 끌어올리려는 추가 시도는 진행하지 않는다.
 
+### 16.15 작업 4 — 기존에 알려진 한계(L01~L04) 원인 분석 (Day 8, 2026-07-05, 진행 중)
+
+`SendResultJob.java`, `RetryJob.java`, `ResultCodeClassifier.java`를 직접 읽어 확인한 결과, L01(retry_count 미갱신)·L02(DISPATCHING 상태 고착)·L04(fallback 후 channel 미갱신) 세 가지가 하나의 같은 구조적 원인에서 비롯됨을 확인했다.
+
+**결과 코드 분류 체계** (`ResultCodeClassifier.classify()`):
+- `10000` → STORE (성공)
+- `40001~40008` → DLQ (영구 실패, 재처리 불가)
+- `50001~50004` → RETRY (재처리 가능)
+- `50002` → FALLBACK (RCS 실패 시 SMS로 전환 후 재발송)
+
+**확인된 원인**: `SendResultJob.java`의 데이터베이스 갱신 로직(`buildPostgresSink()`)은 STORE(성공) 판정일 때만 동작한다. 실행되는 UPDATE문은 다음과 같다.
+
+```sql
+UPDATE msg_send_history SET
+  status = ?, result_code = ?,
+  dispatched_at = ?, delivered_at = ?
+WHERE tx_id = ?
+```
+
+RETRY·FALLBACK·DLQ 판정 건은 이 UPDATE를 거치지 않고 카프카(`topic.send.retry` 또는 `topic.send.dlq`)로만 발행되며, 데이터베이스는 전혀 갱신되지 않는다. 이것이 세 항목을 모두 설명한다.
+
+- **L01(retry_count 미갱신)**: 위 UPDATE문 자체에 `retry_count` 컬럼이 빠져있다. 재시도 횟수는 `RetryJob.java`의 Flink 상태(`retryCountState`) 안에서만 관리되고, 최종 성공 시에도 데이터베이스에는 기록되지 않는다.
+- **L04(fallback 후 channel 미갱신)**: `SendResultJob.java`는 FALLBACK 판정 시 메모리상의 객체(`result.setChannel("SMS")`)만 바꾸고 카프카로 넘길 뿐, 데이터베이스는 갱신하지 않는다(L02와 동일한 이유). 이후 SMS로 재발송되어 최종 성공하더라도, 성공 시 UPDATE문에도 `channel` 컬럼이 빠져있어 끝까지 반영되지 않는다.
+- **L02(DISPATCHING 상태 고착)**: RETRY·FALLBACK·DLQ 판정 건은 데이터베이스를 전혀 갱신하지 않으므로, 특히 DLQ(완전 실패)로 종결된 건은 상태가 영원히 최초값(DISPATCHING)에 고착된다. 다만 `RetryJob.java`의 지수 백오프 정책(1회 30초, 2회 60초, 3회 120초, 최대 3회)을 고려하면 최대 3분 30초까지 재시도가 진행될 수 있어, 관측된 46% 중 일부는 측정 시점에 아직 재시도가 끝나지 않은 정상 동작이었을 가능성도 배제할 수 없다. 즉 L02는 "DLQ 종결 건이 고착되는 진짜 결함"과 "측정 타이밍 문제"가 섞여 있을 수 있다.
+- **L03(DISPATCHING 다중 해석)**: 코드 결함이 아니라 테스트 시나리오마다 "종료 상태"를 다르게 해석하고 있어 생기는 검증 기준 정리 문제로 확인했다. 코드 수정 대상이 아니다.
+
+**제안하는 수정 방향 (사용자 확인 대기 중)**:
+1. STORE(성공) 시 UPDATE문에 `retry_count`, `channel` 컬럼 추가 → L01, L04 해결
+2. DLQ(완전 실패) 판정 시에도 데이터베이스에 최종 상태(예: `status = 'DLQ'`)를 기록하는 UPDATE 신규 추가 → L02의 "영원히 고착" 문제(진짜 결함 부분) 해결
+3. RETRY·FALLBACK으로 재시도가 진행 중인 동안의 상태를 그대로 DISPATCHING으로 둘지, `RETRYING` 같은 중간 상태로 별도 표시할지는 아직 결정하지 않음 — 사용자 확인 필요
+
+**아직 분석하지 않은 나머지 관찰 사항**: Mock Adapter healthcheck "unhealthy" 표시, 4xxxx 영구실패율 약 29%(설계 목표 약 2% 대비 높음), EMAIL 성공률 22%(FAX 90% 대비 낮음). 코드 수정 방향이 확정된 뒤 이어서 분석 예정.
+
 ---
 
-*문서 끝 — 다음 업데이트: 작업 4(기존에 알려진 한계 L01~L04 및 기타 관찰 항목 분석) 진행 중 (v0.14)*
+*문서 끝 — 다음 업데이트: 작업 4 수정 범위 확정 후 구현, 또는 나머지 관찰 사항(Adapter healthcheck, 4xxxx 실패율, EMAIL 성공률) 분석 진행 중 (v0.15)*
