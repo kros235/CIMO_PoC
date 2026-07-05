@@ -151,11 +151,21 @@ final class RequestPipelineBuilder {
         // 일꾼 수를 채널 수와 똑같이 맞추면 "채널 하나당 일꾼 하나"로 배정될
         // 확률이 크게 높아진다(완전한 보장은 아니며, 배포 후 Flink UI의
         // Subtask Metrics 화면으로 실제로 고르게 나뉘었는지 확인이 필요하다).
+        // ⭐️ 추가 변경(Day 8 작업3, 재검증 중 발견): parallelism을 채널 수(5)로
+        // 맞췄는데도 Flink UI 확인 결과 여전히 한 일꾼에게 채널 2개가 몰리고
+        // 다른 일꾼 하나는 할 일이 없는 현상이 남아있었다. 원인: Flink는
+        // 키를 일꾼에게 배정할 때 기본적으로 128개의 내부 버킷(Key Group)으로
+        // 먼저 나눈 뒤, 그 버킷들을 다시 일꾼 수만큼 묶어서 배분한다. 버킷이
+        // 128개나 되면 채널 5개가 우연히 같은 버킷 묶음에 떨어질 여지가 여전히
+        // 크다. setMaxParallelism을 일꾼 수와 똑같이 5로 맞추면 버킷 1개 =
+        // 일꾼 1명이 되어 겹칠 확률이 크게 줄어든다(완전한 보장은 아니며,
+        // 배포 후 Flink UI Subtask Metrics로 실제 분배를 다시 확인해야 한다).
         SingleOutputStreamOperator<SendMessage> rateLimitedStream = dispatchedStream
                 .keyBy(SendMessage::getChannel)
                 .process(new RateLimitOperator())
                 .name("RateLimitOperator-" + jobLabel)
-                .setParallelism(CHANNEL_COUNT);
+                .setParallelism(CHANNEL_COUNT)
+                .setMaxParallelism(CHANNEL_COUNT);
 
         // ── 채널별 Kafka Sink 분배 ─────────────────────────────────────────────
         // ⭐️ 변경: 위 RateLimitOperator와 병렬도를 맞춰야 Flink가 두 단계를
