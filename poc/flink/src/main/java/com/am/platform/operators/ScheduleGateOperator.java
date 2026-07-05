@@ -77,7 +77,7 @@ public class ScheduleGateOperator extends KeyedProcessFunction<String, SendMessa
         ctx.timerService().registerProcessingTimeTimer(triggerAtMillis);
         ctx.output(SCHEDULED_LOG_TAG, msg);
 
-        LOG.info("[ScheduleGateOperator] 예약 대기 등록: txId={}, scheduledAt={}, triggerAtMillis={}",
+        LOG.debug("[ScheduleGateOperator] 예약 대기 등록: txId={}, scheduledAt={}, triggerAtMillis={}",
                 msg.getTxId(), msg.getScheduledAt(), triggerAtMillis);
     }
 
@@ -94,7 +94,7 @@ public class ScheduleGateOperator extends KeyedProcessFunction<String, SendMessa
         pendingState.clear();
         out.collect(msg);
 
-        LOG.info("[ScheduleGateOperator] 예약 시각 도래, 처리 재개: txId={}", msg.getTxId());
+        LOG.debug("[ScheduleGateOperator] 예약 시각 도래, 처리 재개: txId={}", msg.getTxId());
     }
 
     /**
