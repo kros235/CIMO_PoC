@@ -522,7 +522,7 @@ curl http://localhost:8200/health
 
 ## Day 8 — 알려진 한계 분석 및 아키텍처 개선
 
-**상태: 🔄 진행 중 (작업 1 완료 — 실시간·배치 요청 라인 분리)**
+**상태: 🔄 진행 중 (작업 1 구현·기동 완료, 재검증에서 목표 미달성 — 원인 재진단 필요)**
 
 #### 작업 1 — 실시간·배치 요청 라인 완전 분리 (방안 A)
 
@@ -531,9 +531,14 @@ curl http://localhost:8200/health
 | 1-1 | 요청 인입 토픽 분리 (`topic.send.request` → `.realtime`/`.batch`) | `scripts/start-all.sh`, `poc/config/kafka-topics.sh`(참고용) | ✅ |
 | 1-2 | NiFi 플로우에 sendMethodCode 기준 라우팅 분기 추가 | `poc/nifi/send-request-flow.json` (`proc-route-sendtype` 신규) | ✅ |
 | 1-3 | `deploy_flow.py`의 RouteOnAttribute "Route to Property name" 지원 추가 | `poc/nifi/deploy_flow.py` (`_get_processor_relationships` 수정) | ✅ |
-| 1-4 | `SendRequestJob`을 `SendRequestJob_Realtime`/`SendRequestJob_Batch` 2개 독립 Job으로 분리 | `poc/flink/.../jobs/RequestPipelineBuilder.java`(공통 로직 신규), `SendRequestJob_Realtime.java`, `SendRequestJob_Batch.java` (기존 `SendRequestJob.java` 삭제) | ✅ (코드 작성 완료, **실제 PC에서 mvn 빌드·재배포·재테스트 필요**) |
+| 1-4 | `SendRequestJob`을 `SendRequestJob_Realtime`/`SendRequestJob_Batch` 2개 독립 Job으로 분리 | `poc/flink/.../jobs/RequestPipelineBuilder.java`(공통 로직 신규), `SendRequestJob_Realtime.java`, `SendRequestJob_Batch.java` (기존 `SendRequestJob.java` 삭제) | ✅ (mvn 빌드 및 PC 기동 확인 완료, Flink UI에서 4개 Job RUNNING 확인) |
 | 1-5 | `test_adapters.sh` 등 부가 스크립트의 토픽 참조 갱신 | `poc/services/test_adapters.sh` | ✅ |
-| 1-6 | TS-0009(복합 시나리오) 재실행으로 격리 효과 검증 | - | ⬜ 미실시 — mvn 빌드·재배포 후 진행 필요 |
+| 1-6 | TS-0009(복합 시나리오) 재실행으로 격리 효과 검증 | 재실행 완료 — **개선 안 됨.** TC-0029 여전히 FAIL(TPS -41.7%, p95 +69.3%, 분리 전보다 오히려 악화). 실시간·배치 양쪽 모두 HTTP 503 대량 발생 → 이번에 분리한 지점(요청 토픽·Flink Job)이 아닌 더 상류(NiFi 단일 인스턴스 등)가 실제 병목일 가능성. 상세는 `AM_ARCHITECTURE.md` §16.13.1 | ⚠️ 완료했으나 목표 미달성 — 원인 재진단 필요 |
+
+**⚠️ 다음 세션에서 우선 확인할 것 (원인 재진단, 추가 코드 변경 전 필수):**
+1. TS-0009 재실행 중 `docker stats am-nifi am-kafka --no-stream`로 CPU 사용률 확인 (§16.5에서 확인된 "NiFi 112~135%" 패턴 재현 여부)
+2. NiFi UI(`http://localhost:8443/nifi`) Bulletin Board에서 backpressure 경고 확인, 캔버스에서 큐 적체(빨간 숫자) 확인
+3. 위 확인 후 원인이 NiFi 단일 인스턴스로 확정되면, §16.5와 같은 "PoC 하드웨어 한계"로 분류할지, 아니면 추가 구조 변경(NiFi 계층 분리 등)을 시도할지 결정
 
 **변경 방식(방안 A, 완전 분리) 요약:**
 - `topic.send.request.realtime`(12파티션, sendMethodCode 03/04/05) / `topic.send.request.batch`(6파티션, 01/02) 로 인입 토픽 자체를 분리
@@ -543,12 +548,7 @@ curl http://localhost:8200/health
 - 이전에 미사용 상태였던 예약 토픽 `topic.send.batch`는 제거하고, 실제 역할이 명확한 `topic.send.request.batch`로 대체
 - Flink Job 제출 수: 3개 → 4개 (`SendRequestJob_Realtime`, `SendRequestJob_Batch`, `SendResultJob`, `RetryJob`)
 
-**⚠️ 다음 세션에서 반드시 해야 할 것 (PC에서):**
-1. `git pull` → 패치 적용 확인
-2. `cd poc/flink && mvn clean package && cp target/am-flink-jobs-1.0.0-SNAPSHOT.jar am-flink-fat.jar`
-3. `bash scripts/start-all.sh` 재기동 (Kafka 토픽 자동 보정 + NiFi 플로우 재배포 + Flink Job 4개 제출)
-4. Flink UI(`http://localhost:8081`)에서 Job 4개가 모두 RUNNING인지, 그리고 `SendRequestJob_Realtime`/`SendRequestJob_Batch`가 각각 올바른 토픽만 구독하는지 **육안 확인** (설정이 "적용됐다"는 로그만 믿지 말 것 — §16.2.5 교훈 동일 적용)
-5. TS-0009 재실행하여 배치 폭주 시 실시간 지연이 실제로 해소됐는지 재검증
+(참고: mvn 빌드·재기동·`git push`까지 전부 완료됨(2026-07-05) — Flink Job 4개 RUNNING, Kafka 토픽 11개 정상 확인. 다만 위 1-6 결과대로 TS-0009 재검증에서 목표는 달성하지 못함.)
 
 ---
 
