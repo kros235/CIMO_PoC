@@ -388,9 +388,16 @@ docker cp am-flink-fat.jar am-flink-jobmanager:/tmp/am-flink-fat.jar > /dev/null
 #   배치 Job이 아무리 밀려도 실시간 Job의 처리 자원에 물리적으로 영향을 주지 않음.
 JOB_CLASSES=("SendRequestJob_Realtime" "SendRequestJob_Batch" "SendResultJob" "RetryJob")
 for cls in "${JOB_CLASSES[@]}"; do
-    log_info "  제출 중: $cls (parallelism=${FLINK_JOB_PARALLELISM:-4})"
+    log_info "  제출 중: $cls (parallelism=${FLINK_JOB_PARALLELISM:-3})"
+    # ⭐️ 변경(작업3 검증 중 발견): TaskManager 전체 의자(슬롯) 개수는
+    # 2대 x 6개 = 12개로 고정되어 있는데, 작업1(실시간·배치 요청 경로
+    # 분리)로 작업 개수가 3개에서 4개로 늘어났다. 예전 기본값 4를 그대로
+    # 쓰면 4개 작업 x 4개 = 16개가 필요해져서 12개를 초과하게 되고, 맨
+    # 마지막에 자리를 요청하는 작업(RetryJob)이 자리를 못 찾고 계속
+    # 재시작을 반복하는 문제가 있었다. 기본값을 3으로 낮추면 4개 작업
+    # x 3개 = 12개로 지금 있는 자리 개수와 정확히 맞는다.
     docker exec am-flink-jobmanager flink run -d \
-        -p "${FLINK_JOB_PARALLELISM:-4}" \
+        -p "${FLINK_JOB_PARALLELISM:-3}" \
         --class "com.am.platform.jobs.$cls" \
         /tmp/am-flink-fat.jar 2>&1 | grep -v WARNING | grep "Job has been submitted" || true
     sleep 3
