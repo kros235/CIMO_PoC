@@ -197,8 +197,8 @@ public class SendRequestJob {
         return JdbcSink.sink(
                 "INSERT INTO msg_send_history " +
                 "(tx_id, channel, status, sender, receiver, " +
-                " retry_count, source, requested_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, NOW()) " +
+                " retry_count, source, requested_at, dispatched_at) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW()) " +
                 "ON CONFLICT (tx_id) DO NOTHING",
                 (ps, msg) -> {
                     ps.setString(1, msg.getTxId());
@@ -208,6 +208,17 @@ public class SendRequestJob {
                     ps.setString(5, msg.getReceiver());
                     ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
+                    // ⭐️ 수정 (TS-0009 준비 - 채널 공유 시 지연 측정을 위해 필요):
+                    // 기존엔 requested_at에 NOW()(=이 INSERT가 실행되는 시각,
+                    // 즉 채널 게이트 통과 완료 시각과 항상 동일)를 넣고 있어
+                    // "요청→통과 소요시간"을 전혀 계산할 수 없었다.
+                    // 클라이언트가 보낸 실제 요청 시각(requestedAt)을 사용하고,
+                    // dispatched_at(=NOW(), 이 INSERT 실행 시각)을 함께 기록하여
+                    // dispatched_at - requested_at 으로 소요시간을 계산할 수 있게 한다.
+                    // (배치/예약 경로의 buildScheduledLogPostgresSink()와 동일한 방식)
+                    ps.setTimestamp(8, msg.getRequestedAt() != null && !msg.getRequestedAt().trim().isEmpty()
+                            ? Timestamp.from(OffsetDateTime.parse(msg.getRequestedAt()).toInstant())
+                            : Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())));
                 },
                 JdbcExecutionOptions.builder()
                         .withBatchSize(100)
