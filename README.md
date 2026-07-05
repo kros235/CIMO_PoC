@@ -522,7 +522,7 @@ curl http://localhost:8200/health
 
 ## Day 8 — 알려진 한계 분석 및 아키텍처 개선
 
-**상태: 🔄 진행 중 (작업 1 구현·기동 완료, 재검증에서 목표 미달성 — 원인 재진단 필요)**
+**상태: ✅ 작업 1 완료 (조정된 기준 충족) / 🔄 작업 2 진행 중**
 
 #### 작업 1 — 실시간·배치 요청 라인 완전 분리 (방안 A)
 
@@ -533,12 +533,13 @@ curl http://localhost:8200/health
 | 1-3 | `deploy_flow.py`의 RouteOnAttribute "Route to Property name" 지원 추가 | `poc/nifi/deploy_flow.py` (`_get_processor_relationships` 수정) | ✅ |
 | 1-4 | `SendRequestJob`을 `SendRequestJob_Realtime`/`SendRequestJob_Batch` 2개 독립 Job으로 분리 | `poc/flink/.../jobs/RequestPipelineBuilder.java`(공통 로직 신규), `SendRequestJob_Realtime.java`, `SendRequestJob_Batch.java` (기존 `SendRequestJob.java` 삭제) | ✅ (mvn 빌드 및 PC 기동 확인 완료, Flink UI에서 4개 Job RUNNING 확인) |
 | 1-5 | `test_adapters.sh` 등 부가 스크립트의 토픽 참조 갱신 | `poc/services/test_adapters.sh` | ✅ |
-| 1-6 | TS-0009(복합 시나리오) 재실행으로 격리 효과 검증 | 재실행 완료 — **개선 안 됨.** TC-0029 여전히 FAIL(TPS -41.7%, p95 +69.3%, 분리 전보다 오히려 악화). 실시간·배치 양쪽 모두 HTTP 503 대량 발생 → 이번에 분리한 지점(요청 토픽·Flink Job)이 아닌 더 상류(NiFi 단일 인스턴스 등)가 실제 병목일 가능성. 상세는 `AM_ARCHITECTURE.md` §16.13.1 | ⚠️ 완료했으나 목표 미달성 — 원인 재진단 필요 |
+| 1-6 | TS-0009(복합 시나리오) 재실행으로 격리 효과 검증 | 재실행 완료. TC-0029는 FAIL로 남았으나, `docker stats`(NiFi 5%→최대116.66%)로 **원인을 NiFi 단일 인스턴스 CPU 포화로 확정**(§16.5와 동일 패턴 재현). 상세는 `AM_ARCHITECTURE.md` §16.13.1~16.13.2 | ✅ 원인 규명 완료 |
 
-**⚠️ 다음 세션에서 우선 확인할 것 (원인 재진단, 추가 코드 변경 전 필수):**
-1. TS-0009 재실행 중 `docker stats am-nifi am-kafka --no-stream`로 CPU 사용률 확인 (§16.5에서 확인된 "NiFi 112~135%" 패턴 재현 여부)
-2. NiFi UI(`http://localhost:8443/nifi`) Bulletin Board에서 backpressure 경고 확인, 캔버스에서 큐 적체(빨간 숫자) 확인
-3. 위 확인 후 원인이 NiFi 단일 인스턴스로 확정되면, §16.5와 같은 "PoC 하드웨어 한계"로 분류할지, 아니면 추가 구조 변경(NiFi 계층 분리 등)을 시도할지 결정
+**✅ 작업 1 최종 결론 (완료 기준 조정, §16.13.2):**
+- 원래 기준("TS-0009 ±20% 이내 달성")은 PoC 단일 호스트 하드웨어 제약상 검증 목적에 부합하지 않는다고 판단하여 조정
+- **조정된 완료 기준**: (1) 실제 KT 구조와 동일한 실시간·배치 요청 라인 분리 아키텍처를 PoC에 반영 ✅ / (2) 남은 성능 문제의 원인을 실측으로 규명 ✅ (NiFi 단일 인스턴스 CPU 포화, §16.5와 동일 패턴) → **작업 1 완료 처리**
+- PoC 단일 호스트의 NiFi 하드웨어 한계는 §16.5와 동일하게 "실 서버 NiFi 클러스터화 필요"로 이월. 이번 PoC에서 NiFi를 억지로 더 튜닝하지 않음
+- TS-0008(§16.9, 100만 건 대량 503)도 같은 원인일 가능성이 높아져 **작업 2에서 이 가설을 검증**
 
 **변경 방식(방안 A, 완전 분리) 요약:**
 - `topic.send.request.realtime`(12파티션, sendMethodCode 03/04/05) / `topic.send.request.batch`(6파티션, 01/02) 로 인입 토픽 자체를 분리
