@@ -520,6 +520,38 @@ curl http://localhost:8200/health
 
 ---
 
+## Day 8 — 알려진 한계 분석 및 아키텍처 개선
+
+**상태: 🔄 진행 중 (작업 1 완료 — 실시간·배치 요청 라인 분리)**
+
+#### 작업 1 — 실시간·배치 요청 라인 완전 분리 (방안 A)
+
+| # | 작업 항목 | 산출물 | 상태 |
+|---|---------|--------|------|
+| 1-1 | 요청 인입 토픽 분리 (`topic.send.request` → `.realtime`/`.batch`) | `scripts/start-all.sh`, `poc/config/kafka-topics.sh`(참고용) | ✅ |
+| 1-2 | NiFi 플로우에 sendMethodCode 기준 라우팅 분기 추가 | `poc/nifi/send-request-flow.json` (`proc-route-sendtype` 신규) | ✅ |
+| 1-3 | `deploy_flow.py`의 RouteOnAttribute "Route to Property name" 지원 추가 | `poc/nifi/deploy_flow.py` (`_get_processor_relationships` 수정) | ✅ |
+| 1-4 | `SendRequestJob`을 `SendRequestJob_Realtime`/`SendRequestJob_Batch` 2개 독립 Job으로 분리 | `poc/flink/.../jobs/RequestPipelineBuilder.java`(공통 로직 신규), `SendRequestJob_Realtime.java`, `SendRequestJob_Batch.java` (기존 `SendRequestJob.java` 삭제) | ✅ (코드 작성 완료, **실제 PC에서 mvn 빌드·재배포·재테스트 필요**) |
+| 1-5 | `test_adapters.sh` 등 부가 스크립트의 토픽 참조 갱신 | `poc/services/test_adapters.sh` | ✅ |
+| 1-6 | TS-0009(복합 시나리오) 재실행으로 격리 효과 검증 | - | ⬜ 미실시 — mvn 빌드·재배포 후 진행 필요 |
+
+**변경 방식(방안 A, 완전 분리) 요약:**
+- `topic.send.request.realtime`(12파티션, sendMethodCode 03/04/05) / `topic.send.request.batch`(6파티션, 01/02) 로 인입 토픽 자체를 분리
+- NiFi에 `RouteOnAttribute`(Route to Property name) 신규 배치 — txId 14~15번째 자리(sendMethodCode)로 즉시 분기
+- Flink Job도 `SendRequestJob_Realtime` / `SendRequestJob_Batch` 2개의 완전히 독립된 Job(별도 Consumer Group)으로 분리 — 공통 파이프라인 로직은 `RequestPipelineBuilder.java`로 추출해 코드 중복 방지
+- 채널별 분배 토픽(`topic.send.dispatch.*`) 이후 구조는 기존과 동일
+- 이전에 미사용 상태였던 예약 토픽 `topic.send.batch`는 제거하고, 실제 역할이 명확한 `topic.send.request.batch`로 대체
+- Flink Job 제출 수: 3개 → 4개 (`SendRequestJob_Realtime`, `SendRequestJob_Batch`, `SendResultJob`, `RetryJob`)
+
+**⚠️ 다음 세션에서 반드시 해야 할 것 (PC에서):**
+1. `git pull` → 패치 적용 확인
+2. `cd poc/flink && mvn clean package && cp target/am-flink-jobs-1.0.0-SNAPSHOT.jar am-flink-fat.jar`
+3. `bash scripts/start-all.sh` 재기동 (Kafka 토픽 자동 보정 + NiFi 플로우 재배포 + Flink Job 4개 제출)
+4. Flink UI(`http://localhost:8081`)에서 Job 4개가 모두 RUNNING인지, 그리고 `SendRequestJob_Realtime`/`SendRequestJob_Batch`가 각각 올바른 토픽만 구독하는지 **육안 확인** (설정이 "적용됐다"는 로그만 믿지 말 것 — §16.2.5 교훈 동일 적용)
+5. TS-0009 재실행하여 배치 폭주 시 실시간 지연이 실제로 해소됐는지 재검증
+
+---
+
 ## 알려진 한계 (Day 8 분석 대상)
 
 Day 6 통합 테스트 과정에서 식별된 PoC 동작 한계. Day 8 에서 근본 원인 분석 + 문서화 예정.

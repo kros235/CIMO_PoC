@@ -2,10 +2,10 @@
 
 ### MIMO·CI 통합 AM을 통한 초대용량 발송 플랫폼 고도화
 
-> **문서 버전:** v0.9 (Day 7 시나리오 A/B/C 전체 완료 — TS-0009 복합 테스트 결과 반영)
+> **문서 버전:** v0.10 (Day 8 작업 1 — 실시간·배치 요청 라인 분리 구현 반영, §16.13)
 > **최초 작성일:** 2026-03-24
 > **최종 수정일:** 2026-07-05
-> **상태:** POC Day 6 완료, Day 7 성능 테스트(실시간/배치/복합) 전체 완료 — 다수 이슈 Day 8 이월
+> **상태:** POC Day 7 완료. Day 8 진행 중 — 요청 라인 분리 구현 완료(PC 빌드·재검증 대기), 나머지 이슈(§16.9, §16.7-1, L01~L04) 분석 예정
 
 ---
 
@@ -1437,6 +1437,27 @@ Day 7 전 측정에서 공통적으로 `DISPATCHING` 상태 78~88%, `DELIVERED` 
 
 **결론**: §16.11에서 제기했던 실시간·배치 요청 라인 분리의 필요성이 이번 실측으로 뒷받침되었다. 채널 단위 분리(현재 구조)만으로는 배치 폭주로부터 실시간을 보호할 수 없으며, **요청 인입 단계에서부터 분리**해야 근본적으로 해결 가능하다고 판단한다.
 
+### 16.13 실시간·배치 요청 라인 분리 구현 (Day 8, 2026-07-05) — §16.11/§16.12 후속 조치
+
+§16.11에서 검토 사항으로 제기하고 §16.12 실측으로 필요성이 뒷받침된 실시간·배치 요청 라인 분리를, **방안 A(완전 분리)**로 구현했다.
+
+**구현 내용:**
+
+| 구간 | 변경 전 | 변경 후 |
+|------|--------|--------|
+| 요청 인입 토픽 | `topic.send.request` 1개 (12파티션) | `topic.send.request.realtime`(12파티션) / `topic.send.request.batch`(6파티션) 2개 |
+| NiFi | txId 검증 → 바로 `PublishKafka` 1개 | txId 검증 → `RouteOnAttribute`(sendMethodCode 기준, Route to Property name) → `PublishKafka` 2개 |
+| Flink Job | `SendRequestJob` 1개 (Consumer Group 1개) | `SendRequestJob_Realtime` / `SendRequestJob_Batch` 2개 (Consumer Group도 완전히 분리) |
+| 공통 로직 | `SendRequestJob.java` 단일 파일 | `RequestPipelineBuilder.java`(공통 파이프라인) + 2개의 얇은 진입점 클래스로 코드 중복 방지 |
+
+**라우팅 방식**: txId 14~15번째 자리(sendMethodCode, `TxIdParser.getSendMethodCode()`와 동일 위치)를 NiFi Expression Language `${txId:substring(13,15)}`로 즉시 판별. 별도 필드 추가나 상류 시스템 변경 없이, 이미 txId 안에 있던 정보를 요청 인입 단계로 "앞당겨 쓰는" 방식이라 상류 연동 규격에 영향이 없다.
+
+**격리 효과의 근거**: 기존 구조는 실시간·배치가 동일한 Consumer Group·동일한 Flink Job 내 연산자 체인을 공유했기 때문에, 배치 물량으로 다운스트림 연산자(ValidationOperator, RateLimitOperator 등)에 배압(backpressure)이 걸리면 그 배압이 같은 체인을 타는 실시간 메시지에도 그대로 전파됐다(§16.12에서 실측). 완전히 별도의 Flink Job으로 분리하면 두 파이프라인이 물리적으로 다른 Consumer Group·다른 연산자 인스턴스를 쓰게 되어, 한쪽의 배압이 다른 쪽 연산자 체인에 전파될 경로 자체가 없어진다.
+
+**deploy_flow.py 수정 필요성**: 신규 라우팅 Processor는 NiFi의 "Route to Property name" 전략을 사용하는데, 기존 `_get_processor_relationships()`가 RouteOnAttribute의 관계명을 `["matched", "unmatched"]`로 하드코딩하고 있어 그대로 두면 auto-terminate 대상 계산이 잘못된다. `proc_def`를 함께 전달해 Routing Strategy에 따라 관계명을 동적으로 판단하도록 수정했다 (§16.2.5와 같은 계열의 "설정이 조용히 무시되는" 문제를 사전에 차단).
+
+**검증 상태**: 코드/설정 작성 및 NiFi JSON 문법·Python 문법·Bash 문법 검증 완료. **Maven 빌드는 사용 중인 sandbox 환경의 네트워크 제약(Maven Central 미허용)으로 이 자리에서 수행하지 못했다** — 실제 PC(노트북B/데스크탑A)에서 `mvn clean package` 빌드, Flink UI 육안 확인, TS-0009 재실행까지 완료해야 최종 검증된다.
+
 ---
 
-*문서 끝 — 다음 업데이트: 실시간·배치 요청 라인 분리(§16.11) 착수 시, 또는 Day 8 보류 이슈 분석 완료 후 (v0.9)*
+*문서 끝 — 다음 업데이트: 실시간·배치 요청 라인 분리 재검증(TS-0009) 완료 후, 또는 Day 8 나머지 항목(§16.9, §16.7-1, L01~L04) 분석 완료 후 (v0.9)*
