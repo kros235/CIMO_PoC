@@ -11,17 +11,24 @@ import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
+import org.apache.flink.connector.jdbc.JdbcExecutionOptions;
+import org.apache.flink.connector.jdbc.JdbcSink;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
+import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.util.Collector;
+import org.apache.flink.util.OutputTag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.Timestamp;
 import java.util.Properties;
 
 /**
@@ -57,6 +64,24 @@ public class RetryJob {
 
     private static final String TOPIC_RETRY = "topic.send.retry";
     private static final String TOPIC_DLQ   = "topic.send.dlq";
+
+    // ⭐️ 신규(Day 8 작업4): 최대 재시도 초과("완전 포기") 시 데이터베이스에
+    // 직접 기록하기 위한 접속 정보. 기존엔 이 정보가 없어서, 재시도를 다
+    // 써버린 건은 카프카(topic.send.dlq)로만 발행되고 데이터베이스는
+    // 전혀 갱신되지 않았다(발송 상태 고착 문제·재시도 횟수 미기록 문제의
+    // 나머지 절반 원인 - SendResultJob 쪽 절반은 이미 조치했음).
+    private static final String POSTGRES_URL  =
+            System.getenv().getOrDefault("POSTGRES_URL",
+                "jdbc:postgresql://postgres:5432/am_db");
+    private static final String POSTGRES_USER =
+            System.getenv().getOrDefault("POSTGRES_USER", "am_user");
+    private static final String POSTGRES_PASS =
+            System.getenv().getOrDefault("POSTGRES_PASSWORD", "am_password");
+
+    /** ⭐️ 신규(Day 8 작업4): 최대 재시도 초과로 완전 포기된 건을 데이터베이스
+     *  기록 Sink로 흘려보내기 위한 side output 태그. */
+    private static final OutputTag<SendResult> DLQ_TERMINAL_TAG =
+            new OutputTag<SendResult>("dlq-terminal") {};
 
     // 채널별 dispatch 토픽 (재발송 시 사용)
     private static final java.util.Map<String, String> DISPATCH_TOPIC_MAP =
@@ -107,13 +132,24 @@ public class RetryJob {
                 .name("JsonDeserializer-Retry");
 
         // ── RetryProcessFunction (txId 기반 keyed 처리) ───────────────────────
-        retryStream
+        SingleOutputStreamOperator<RetryEvent> retryOutput = retryStream
                 .keyBy(SendResult::getTxId)
                 .process(new RetryProcessFunction())
-                .name("RetryProcessFunction")
-                // 재발송 or DLQ 토픽으로 동적 라우팅
+                .name("RetryProcessFunction");
+
+        // 재발송 or DLQ 토픽으로 동적 라우팅
+        retryOutput
                 .sinkTo(buildDynamicKafkaSink())
                 .name("KafkaSink-RetryOrDLQ");
+
+        // ⭐️ 신규(Day 8 작업4): 최대 재시도 초과("완전 포기") 건을 데이터베이스에
+        // 최종 기록. 기존엔 이 경로가 SendResultJob을 거치지 않고 곧바로
+        // 카프카로만 발행되어, 재시도 횟수·최종 상태가 데이터베이스에 전혀
+        // 반영되지 않았다(발송 상태 고착 문제·재시도 횟수 미기록 문제의
+        // 나머지 절반 원인).
+        retryOutput.getSideOutput(DLQ_TERMINAL_TAG)
+                .addSink(buildDlqTerminalPostgresSink())
+                .name("PostgresSink-DlqTerminal");
 
         LOG.info("[RetryJob] Job 시작: bootstrapServers={}, maxRetry={}",
                 BOOTSTRAP_SERVERS, MAX_RETRY_COUNT);
@@ -155,6 +191,12 @@ public class RetryJob {
                         result.getTxId(), count);
                 out.collect(new RetryEvent(TOPIC_DLQ,
                         MAPPER.writeValueAsString(result)));
+                // ⭐️ 신규(Day 8 작업4): 데이터베이스 기록용 side output.
+                // result의 retryCount는 아직 이번 시도 횟수(count)로 갱신되기
+                // 전이므로, 실제로 시도한 횟수를 정확히 남기기 위해 count로
+                // 명시적으로 설정한다.
+                result.setRetryCount(count);
+                ctx.output(DLQ_TERMINAL_TAG, result);
                 retryCountState.clear();
                 pendingResultState.clear();
                 return;
@@ -223,6 +265,36 @@ public class RetryJob {
             this.targetTopic = targetTopic;
             this.payload = payload;
         }
+    }
+
+    /**
+     * ⭐️ 신규(Day 8 작업4): 최대 재시도 초과로 완전 포기된 건의 최종 상태를
+     * 데이터베이스에 기록하는 Sink. SendResultJob의 buildDlqPostgresSink()와
+     * 동일하게 status를 "DLQ"로 남긴다.
+     */
+    private static SinkFunction<SendResult> buildDlqTerminalPostgresSink() {
+        return JdbcSink.sink(
+                "UPDATE msg_send_history SET " +
+                "  status = 'DLQ', result_code = ?, retry_count = ?, channel = ? " +
+                "WHERE tx_id = ?",
+                (ps, result) -> {
+                    ps.setString(1, result.getResultCode());
+                    ps.setInt(2, result.getRetryCount());
+                    ps.setString(3, result.getChannel());
+                    ps.setString(4, result.getTxId());
+                },
+                JdbcExecutionOptions.builder()
+                        .withBatchSize(100)
+                        .withBatchIntervalMs(200)
+                        .withMaxRetries(3)
+                        .build(),
+                new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                        .withUrl(POSTGRES_URL)
+                        .withDriverName("org.postgresql.Driver")
+                        .withUsername(POSTGRES_USER)
+                        .withPassword(POSTGRES_PASS)
+                        .build()
+        );
     }
 
     /**

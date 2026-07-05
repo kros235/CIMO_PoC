@@ -213,7 +213,13 @@ class AdapterBase(ABC):
             "status":        status,
             "resultCode":    result_code,
             "errorDetail":   error_detail,
-            "retryCount":    payload.get("meta", {}).get("retryCount", 0),
+            # ⭐️ 변경(Day 8 작업4): 기존엔 payload.get("meta", {}).get("retryCount", 0)로
+            # "meta"라는 하위 항목 안을 찾고 있었으나, 실제 요청 메시지(SendMessage)는
+            # retryCount를 최상위 항목에 바로 담아 보낸다("meta"라는 항목 자체가
+            # 없음). 그래서 이 코드는 항상 못 찾고 기본값 0만 반환했다 - 재시도
+            # 하다가 결국 성공한 건도 재시도 횟수가 데이터베이스에 0으로 기록되던
+            # 문제의 원인이었다.
+            "retryCount":    payload.get("retryCount", 0),
             "source":        payload.get("source", ""),
             "dispatchedAt":  payload.get("dispatchedAt", now_kst),
             "deliveredAt":   now_kst,
