@@ -117,7 +117,7 @@ services:
       - |
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 6
+        taskmanager.numberOfTaskSlots: 8
       - POSTGRES_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-am_db}
       - POSTGRES_USER=${POSTGRES_USER:-am_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-am_password}

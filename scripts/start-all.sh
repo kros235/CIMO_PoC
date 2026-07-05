@@ -389,13 +389,21 @@ docker cp am-flink-fat.jar am-flink-jobmanager:/tmp/am-flink-fat.jar > /dev/null
 JOB_CLASSES=("SendRequestJob_Realtime" "SendRequestJob_Batch" "SendResultJob" "RetryJob")
 for cls in "${JOB_CLASSES[@]}"; do
     log_info "  제출 중: $cls (parallelism=${FLINK_JOB_PARALLELISM:-3})"
-    # ⭐️ 변경(작업3 검증 중 발견): TaskManager 전체 의자(슬롯) 개수는
-    # 2대 x 6개 = 12개로 고정되어 있는데, 작업1(실시간·배치 요청 경로
-    # 분리)로 작업 개수가 3개에서 4개로 늘어났다. 예전 기본값 4를 그대로
-    # 쓰면 4개 작업 x 4개 = 16개가 필요해져서 12개를 초과하게 되고, 맨
-    # 마지막에 자리를 요청하는 작업(RetryJob)이 자리를 못 찾고 계속
-    # 재시작을 반복하는 문제가 있었다. 기본값을 3으로 낮추면 4개 작업
-    # x 3개 = 12개로 지금 있는 자리 개수와 정확히 맞는다.
+    # ⭐️ 변경(작업3 검증 중 발견 및 후속 조정): 처음엔 TaskManager 전체 자리
+    # (슬롯) 개수가 2대 x 6개 = 12개였는데, 작업1(실시간·배치 요청 경로 분리)로
+    # Job 개수가 3개에서 4개로 늘어나 기본 병렬도(4)를 그대로 쓰면 16개가
+    # 필요해져 12개를 초과했다. 우선 기본 병렬도를 3으로 낮춰 4개 Job x 3개
+    # = 12개로 맞췄었다.
+    #
+    # ⭐️ 추가 변경(채널별 처리 불균형 발견 후): RateLimitOperator는 채널(5개)별로
+    # keyBy되는데, 이 -p 옵션이 정하는 기본 병렬도(3)를 그대로 쓰면 일꾼 3명이
+    # 채널 5개를 나눠 맡아야 해서 한 일꾼이 채널을 2~3개씩 떠맡는 불균형이
+    # 발생했다(실측: 일꾼 1명이 나머지 2명 합친 것의 1.5배를 처리). 그래서
+    # RateLimitOperator 이후 체인만 코드에서 별도로 .setParallelism(5)를 지정해
+    # 채널 개수와 맞췄다(이 -p 옵션은 그 외 나머지 단계에만 적용됨). 그 결과
+    # 실시간/배치 Job은 각각 5자리, 결과처리/재처리 Job은 각각 3자리가 필요해져
+    # 총 16자리가 필요하게 됐고, TaskManager 슬롯을 6개→8개로 늘려
+    # 2대 x 8개 = 16개로 맞췄다(docker-compose.yml).
     docker exec am-flink-jobmanager flink run -d \
         -p "${FLINK_JOB_PARALLELISM:-3}" \
         --class "com.am.platform.jobs.$cls" \

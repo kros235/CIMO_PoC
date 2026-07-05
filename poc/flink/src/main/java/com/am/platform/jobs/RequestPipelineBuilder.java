@@ -55,6 +55,11 @@ final class RequestPipelineBuilder {
     private static final String TOPIC_DISPATCH_FAX   = "topic.send.dispatch.fax";
     private static final String TOPIC_DISPATCH_EMAIL = "topic.send.dispatch.email";
 
+    // ⭐️ 신규(Day 8 작업3): 채널 개수. RateLimitOperator는 채널별로 keyBy되므로,
+    // 이 개수와 병렬도를 맞추면 일꾼(subtask) 하나당 채널 하나가 배정될 확률이
+    // 높아진다(완전한 보장은 아니므로 배포 후 Flink UI로 실제 분배를 확인해야 함).
+    private static final int CHANNEL_COUNT = 5; // SMS, MMS, RCS, FAX, EMAIL
+
     private static final String POSTGRES_URL  =
             System.getenv().getOrDefault("POSTGRES_URL",
                 "jdbc:postgresql://postgres:5432/am_db");
@@ -139,36 +144,52 @@ final class RequestPipelineBuilder {
                 .name("ChannelDispatchOperator-" + jobLabel);
 
         // ── RateLimitOperator (채널별 keyBy 후 TPS 제어) ──────────────────────
+        // ⭐️ 변경(Day 8 작업3): 병렬도를 Job 기본값(3)이 아니라 채널 개수(5)로
+        // 명시적으로 맞춘다. 실측 결과(Flink UI Subtask Metrics), 일꾼 3명에게
+        // 채널 5개를 나눠주다 보니 한 일꾼이 채널 3개를 떠맡는 불균형이 발생해,
+        // 그 일꾼이 맡은 채널들만 순서대로 밀려서 늦게 처리되는 문제가 확인됐다.
+        // 일꾼 수를 채널 수와 똑같이 맞추면 "채널 하나당 일꾼 하나"로 배정될
+        // 확률이 크게 높아진다(완전한 보장은 아니며, 배포 후 Flink UI의
+        // Subtask Metrics 화면으로 실제로 고르게 나뉘었는지 확인이 필요하다).
         SingleOutputStreamOperator<SendMessage> rateLimitedStream = dispatchedStream
                 .keyBy(SendMessage::getChannel)
                 .process(new RateLimitOperator())
-                .name("RateLimitOperator-" + jobLabel);
+                .name("RateLimitOperator-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         // ── 채널별 Kafka Sink 분배 ─────────────────────────────────────────────
+        // ⭐️ 변경: 위 RateLimitOperator와 병렬도를 맞춰야 Flink가 두 단계를
+        // 하나로 묶어서(Chaining) 실행할 수 있어 불필요한 네트워크 재분배를
+        // 피할 수 있다.
         rateLimitedStream
                 .filter(msg -> "SMS".equals(msg.getChannel()))
                 .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_SMS))
-                .name("KafkaSink-SMS-" + jobLabel);
+                .name("KafkaSink-SMS-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         rateLimitedStream
                 .filter(msg -> "MMS".equals(msg.getChannel()))
                 .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_MMS))
-                .name("KafkaSink-MMS-" + jobLabel);
+                .name("KafkaSink-MMS-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         rateLimitedStream
                 .filter(msg -> "RCS".equals(msg.getChannel()))
                 .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_RCS))
-                .name("KafkaSink-RCS-" + jobLabel);
+                .name("KafkaSink-RCS-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         rateLimitedStream
                 .filter(msg -> "FAX".equals(msg.getChannel()))
                 .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_FAX))
-                .name("KafkaSink-FAX-" + jobLabel);
+                .name("KafkaSink-FAX-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         rateLimitedStream
                 .filter(msg -> "EMAIL".equals(msg.getChannel()))
                 .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_EMAIL))
-                .name("KafkaSink-EMAIL-" + jobLabel);
+                .name("KafkaSink-EMAIL-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         // PostgreSQL 발송 요청 이력 반영
         // - alreadyPersisted=false (실시간/준실시간, 또는 예약시각이 이미 지난 배치건): 최초 INSERT
@@ -176,12 +197,14 @@ final class RequestPipelineBuilder {
         rateLimitedStream
                 .filter(msg -> !msg.isAlreadyPersisted())
                 .addSink(buildPostgresSink())
-                .name("PostgresSink-Request-" + jobLabel);
+                .name("PostgresSink-Request-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         rateLimitedStream
                 .filter(SendMessage::isAlreadyPersisted)
                 .addSink(buildPostgresReleaseUpdateSink())
-                .name("PostgresSink-ScheduledRelease-" + jobLabel);
+                .name("PostgresSink-ScheduledRelease-" + jobLabel)
+                .setParallelism(CHANNEL_COUNT);
 
         LOG.info("[SendRequestJob_{}] Job 구성 완료: bootstrapServers={}, groupId={}, requestTopic={}",
                 jobLabel, bootstrapServers, groupId, requestTopic);
