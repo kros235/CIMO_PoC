@@ -10,7 +10,7 @@
     "4. Connection을 relationships 정의대로 연결",
     "5. 전체 선택 후 Start 클릭",
     "",
-    "[ 플로우 구성 ]",
+    "[ 플로우 구성 ] — ⭐️ Day 8: 실시간·배치 요청 라인 분리 (방안 A, 완전 분리) 반영",
     "  [ListenHTTP:8090/am/send]",
     "       ↓ success",
     "  [EvaluateJsonPath] ← txId, channel, source 추출",
@@ -20,7 +20,17 @@
     "  [UpdateAttribute]  [LogMessage] ← 오류 로그 기록",
     "  (추적 메타 부착)",
     "       ↓",
-    "  [PublishKafka] → topic.send.request",
+    "  [RouteOnAttribute] ← sendMethodCode(txId 14~15번째 자리) 기준 실시간/배치 분기 ⭐️신규",
+    "       ↓ realtime(03,04,05)      ↓ batch(01,02)",
+    "  [PublishKafka]              [PublishKafka]",
+    "  → topic.send.request.realtime  → topic.send.request.batch",
+    "",
+    "  ⭐️ 분리 이유(Day 8, §16.11~16.12 실측 근거):",
+    "    배치 요청이 몰릴 때 배치와 무관한 채널까지 전부 동일하게 지연되는 현상이",
+    "    실측 확인됨 (평균 15~17만 ms). 원인은 실시간·배치가 요청 인입 단계에서",
+    "    단일 토픽 + 단일 Flink Job을 공유했기 때문. 인입 단계부터 물리적으로",
+    "    분리하여, 배치 폭주가 실시간 처리량에 영향을 주지 않도록 한다.",
+    "    (다운스트림 채널별 분배 토픽 구조는 기존과 동일하게 유지)",
     "",
     "[ txId 검증 규칙 ]",
     "  - 길이: 정확히 35자리",
@@ -105,18 +115,59 @@
         "Max Concurrent Tasks": "4"
       },
       "relationships": {
-        "success": "proc-publish-kafka"
+        "success": "proc-route-sendtype"
       }
     },
     {
-      "id": "proc-publish-kafka",
+      "id": "proc-route-sendtype",
+      "type": "org.apache.nifi.processors.standard.RouteOnAttribute",
+      "name": "실시간·배치 요청 라우팅",
+      "description": "⭐️신규(Day 8): txId 14~15번째 자리(sendMethodCode)를 기준으로 실시간성(03,04,05)과 배치성(01,02) 요청을 물리적으로 분리한다. proc-validate-txid에서 이미 01~05 범위 검증을 통과했으므로 unmatched는 정상 흐름에서는 발생하지 않지만, 방어적으로 오류 로그로 폐기한다.",
+      "position": { "x": 400, "y": 620 },
+      "properties": {
+        "Routing Strategy": "Route to Property name",
+        "realtime": "${txId:substring(13,15):matches('03|04|05')}",
+        "batch":    "${txId:substring(13,15):matches('01|02')}",
+        "Max Concurrent Tasks": "4"
+      },
+      "note": "substring(13,15): 0-index 기준 14~15번째 자리 = sendMethodCode 2자리. TxIdParser.java의 getSendMethodCode()와 동일한 위치.",
+      "relationships": {
+        "realtime":  "proc-publish-kafka-realtime",
+        "batch":     "proc-publish-kafka-batch",
+        "unmatched": "proc-log-invalid"
+      }
+    },
+    {
+      "id": "proc-publish-kafka-realtime",
       "type": "org.apache.nifi.processors.kafka.pubsub.PublishKafka_2_6",
-      "name": "topic.send.request 발행",
-      "description": "검증된 발송 요청 메시지를 topic.send.request에 발행한다. txId를 Kafka 메시지 Key로 사용하여 동일 txId 메시지가 같은 파티션에 적재되도록 한다.",
-      "position": { "x": 400, "y": 700 },
+      "name": "topic.send.request.realtime 발행",
+      "description": "⭐️변경(Day 8, 기존 proc-publish-kafka에서 분리): 실시간성(03) 및 준실시간성(04,05) 요청만 topic.send.request.realtime에 발행한다. txId를 Kafka 메시지 Key로 사용.",
+      "position": { "x": 250, "y": 780 },
       "properties": {
         "bootstrap.servers":    "kafka:9092",
-        "topic":                "topic.send.request",
+        "topic":                "topic.send.request.realtime",
+        "Message Key Field":    "${txId}",
+        "Delivery Guarantee":   "Guarantee Replicated Delivery",
+        "Request Max Bytes":    "1048576",
+        "Compression Type":     "snappy",
+        "acks":                 "all",
+        "Max Concurrent Tasks": "4",
+        "enable.idempotence":   "true"
+      },
+      "relationships": {
+        "success": "proc-log-success",
+        "failure": "proc-log-invalid"
+      }
+    },
+    {
+      "id": "proc-publish-kafka-batch",
+      "type": "org.apache.nifi.processors.kafka.pubsub.PublishKafka_2_6",
+      "name": "topic.send.request.batch 발행",
+      "description": "⭐️신규(Day 8, 기존 proc-publish-kafka에서 분리): 배치성(01,02) 요청만 topic.send.request.batch에 발행한다. 실시간 발행 Processor와 완전히 독립된 Processor·Connection이므로, 배치 폭주 시에도 실시간 발행 경로(NiFi 단계)에는 영향이 없다.",
+      "position": { "x": 550, "y": 780 },
+      "properties": {
+        "bootstrap.servers":    "kafka:9092",
+        "topic":                "topic.send.request.batch",
         "Message Key Field":    "${txId}",
         "Delivery Guarantee":   "Guarantee Replicated Delivery",
         "Request Max Bytes":    "1048576",
@@ -165,9 +216,14 @@
     { "id": "conn-3", "source": "proc-eval-json",    "sourceRelationship": "unmatched",  "destination": "proc-log-invalid" },
     { "id": "conn-4", "source": "proc-validate-txid","sourceRelationship": "matched",    "destination": "proc-attach-meta" },
     { "id": "conn-5", "source": "proc-validate-txid","sourceRelationship": "unmatched",  "destination": "proc-log-invalid" },
-    { "id": "conn-6", "source": "proc-attach-meta",  "sourceRelationship": "success",    "destination": "proc-publish-kafka" },
-    { "id": "conn-7", "source": "proc-publish-kafka","sourceRelationship": "success",    "destination": "proc-log-success" },
-    { "id": "conn-8", "source": "proc-publish-kafka","sourceRelationship": "failure",    "destination": "proc-log-invalid" }
+    { "id": "conn-6", "source": "proc-attach-meta",  "sourceRelationship": "success",    "destination": "proc-route-sendtype" },
+    { "id": "conn-9", "source": "proc-route-sendtype","sourceRelationship": "realtime",  "destination": "proc-publish-kafka-realtime" },
+    { "id": "conn-10","source": "proc-route-sendtype","sourceRelationship": "batch",     "destination": "proc-publish-kafka-batch" },
+    { "id": "conn-11","source": "proc-route-sendtype","sourceRelationship": "unmatched", "destination": "proc-log-invalid" },
+    { "id": "conn-7", "source": "proc-publish-kafka-realtime","sourceRelationship": "success", "destination": "proc-log-success" },
+    { "id": "conn-8", "source": "proc-publish-kafka-realtime","sourceRelationship": "failure", "destination": "proc-log-invalid" },
+    { "id": "conn-12","source": "proc-publish-kafka-batch",   "sourceRelationship": "success", "destination": "proc-log-success" },
+    { "id": "conn-13","source": "proc-publish-kafka-batch",   "sourceRelationship": "failure", "destination": "proc-log-invalid" }
   ],
   "ports": {
     "http_input": {

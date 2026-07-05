@@ -111,7 +111,8 @@ fi
 banner "4. Kafka 토픽 현황"
 
 REQUIRED_TOPICS=(
-  "topic.send.request"
+  "topic.send.request.realtime"
+  "topic.send.request.batch"
   "topic.send.dispatch.sms"
   "topic.send.dispatch.mms"
   "topic.send.dispatch.rcs"

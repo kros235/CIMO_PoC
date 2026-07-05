@@ -28,37 +28,27 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 발송 요청 처리 Flink Job.
+ * ⭐️ 신규(Day 8): 발송 요청 처리 파이프라인의 공통 로직.
  *
- * 파이프라인:
- *   topic.send.request
- *     → ValidationOperator  (txId 검증, 채널 유효성, 필드 존재 여부)
- *     → ScheduleGateOperator (sendMethodCode 01/02 예약 발송건 게이트 — Day 7 Phase 3 신규)
- *     → ChannelDispatchOperator (채널 정규화, 상태 DISPATCHING)
- *     → keyBy(channel) → RateLimitOperator (채널별 TPS 제어)
- *     → topic.send.dispatch.{channel} (채널별 분배 발행)
+ * 배경: 기존 SendRequestJob.java 하나가 실시간·배치 요청을 구분 없이 topic.send.request
+ * 하나로 함께 받아 처리하고 있었다. §16.12 실측에서 배치가 몰리면 배치와 무관한 채널까지
+ * 전부 동일하게 지연되는 현상이 확인되어(원인: 요청 인입 단계 공유), 실시간·배치를
+ * SendRequestJob_Realtime / SendRequestJob_Batch 2개의 완전히 독립된 Flink Job으로
+ * 분리했다(방안 A). 이 클래스는 그 둘이 공유하는 파이프라인 조립 로직만 모아둔 것으로,
+ * 코드 중복 없이 "어떤 토픽을 구독하는지"만 다르게 하기 위해 존재한다.
  *
- * 예약 발송(sendMethodCode 01/02) 처리:
- *   - 미래 시각이 예약된 건은 ScheduleGateOperator가 붙잡아 두고, 즉시 status=SCHEDULED로
- *     DB에 1회 INSERT한다 (VOC 즉시 조회 가능). 예약 시각이 되면 자동으로 파이프라인에
- *     재투입되며, 이후 DB 반영은 INSERT가 아닌 UPDATE로 처리한다 (SendMessage.alreadyPersisted 참고).
- *
- * 환경변수:
- *   KAFKA_BOOTSTRAP_SERVERS  (기본: kafka:9092)
- *   KAFKA_GROUP_ID           (기본: am-flink-request-group)
- *   RATE_LIMIT_SMS/MMS/RCS/FAX/EMAIL (채널별 TPS)
+ * 파이프라인 (기존 SendRequestJob과 동일, 구독 토픽만 인자로 받음):
+ *   {requestTopic}
+ *     → ValidationOperator
+ *     → ScheduleGateOperator (sendMethodCode 01/02 예약 발송건 게이트)
+ *     → ChannelDispatchOperator
+ *     → keyBy(channel) → RateLimitOperator
+ *     → topic.send.dispatch.{channel}
  */
-public class SendRequestJob {
+final class RequestPipelineBuilder {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SendRequestJob.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RequestPipelineBuilder.class);
 
-    private static final String BOOTSTRAP_SERVERS =
-            System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092");
-    private static final String GROUP_ID =
-            System.getenv().getOrDefault("KAFKA_GROUP_ID_REQUEST", "am-flink-request-group");
-    private static final String TOPIC_REQUEST = "topic.send.request";
-
-    // 채널별 dispatch 토픽
     private static final String TOPIC_DISPATCH_SMS   = "topic.send.dispatch.sms";
     private static final String TOPIC_DISPATCH_MMS   = "topic.send.dispatch.mms";
     private static final String TOPIC_DISPATCH_RCS   = "topic.send.dispatch.rcs";
@@ -76,17 +66,32 @@ public class SendRequestJob {
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule());
 
-    public static void main(String[] args) throws Exception {
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    private RequestPipelineBuilder() {}
+
+    /**
+     * 실시간/배치 Job 공통 파이프라인을 조립한다. env.execute()는 호출하지 않으며,
+     * 각 Job의 main()에서 Job 이름을 지정해 직접 실행해야 한다.
+     *
+     * @param env              Flink 실행 환경 (Job별로 각자 생성)
+     * @param bootstrapServers Kafka bootstrap servers
+     * @param groupId          Kafka Consumer Group ID (Job별로 반드시 달라야 함)
+     * @param requestTopic     구독할 요청 토픽 (topic.send.request.realtime 또는 .batch)
+     * @param jobLabel         로그 구분용 라벨 (예: "Realtime", "Batch")
+     */
+    static void build(StreamExecutionEnvironment env,
+                       String bootstrapServers,
+                       String groupId,
+                       String requestTopic,
+                       String jobLabel) {
 
         // Checkpoint 설정 (정확히 1회 처리 보장)
         env.enableCheckpointing(30_000L); // 30초 주기
 
         // ── Kafka Source 설정 ─────────────────────────────────────────────────
         KafkaSource<String> kafkaSource = KafkaSource.<String>builder()
-                .setBootstrapServers(BOOTSTRAP_SERVERS)
-                .setTopics(TOPIC_REQUEST)
-                .setGroupId(GROUP_ID)
+                .setBootstrapServers(bootstrapServers)
+                .setTopics(requestTopic)
+                .setGroupId(groupId)
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new SimpleStringSchema())
                 .build();
@@ -94,7 +99,7 @@ public class SendRequestJob {
         DataStream<String> rawStream = env.fromSource(
                 kafkaSource,
                 WatermarkStrategy.noWatermarks(),
-                "KafkaSource-SendRequest");
+                "KafkaSource-SendRequest-" + jobLabel);
 
         // ── JSON 역직렬화 ──────────────────────────────────────────────────────
         DataStream<SendMessage> msgStream = rawStream
@@ -102,73 +107,68 @@ public class SendRequestJob {
                     try {
                         return MAPPER.readValue(json, SendMessage.class);
                     } catch (Exception e) {
-                        LOG.error("[SendRequestJob] JSON 파싱 실패: {}", json, e);
+                        LOG.error("[SendRequestJob_{}] JSON 파싱 실패: {}", jobLabel, json, e);
                         return null;
                     }
                 })
                 .filter(msg -> msg != null)
-                .name("JsonDeserializer");
+                .name("JsonDeserializer-" + jobLabel);
 
         // ── ValidationOperator ────────────────────────────────────────────────
         SingleOutputStreamOperator<SendMessage> validatedStream = msgStream
                 .filter(new ValidationOperator())
-                .name("ValidationOperator");
+                .name("ValidationOperator-" + jobLabel);
 
-        // ── ScheduleGateOperator (예약 발송 게이트, Day 7 Phase 3 신규) ──────────
+        // ── ScheduleGateOperator (예약 발송 게이트) ──────────────────────────
         // txId는 유일하므로 keyBy(txId)로 파티셔닝해도 키당 최대 1건만 대기하게 되어 안전하다.
         SingleOutputStreamOperator<SendMessage> gatedStream = validatedStream
                 .keyBy(SendMessage::getTxId)
                 .process(new ScheduleGateOperator())
-                .name("ScheduleGateOperator");
+                .name("ScheduleGateOperator-" + jobLabel);
 
         // 예약 대기 등록 시점에 즉시 발행되는 side output → SCHEDULED 상태로 DB 최초 1회 INSERT
         DataStream<SendMessage> scheduledLogStream =
                 gatedStream.getSideOutput(ScheduleGateOperator.SCHEDULED_LOG_TAG);
         scheduledLogStream
                 .addSink(buildScheduledLogPostgresSink())
-                .name("PostgresSink-ScheduledLog");
+                .name("PostgresSink-ScheduledLog-" + jobLabel);
 
         // ── ChannelDispatchOperator ───────────────────────────────────────────
         SingleOutputStreamOperator<SendMessage> dispatchedStream = gatedStream
                 .map(new ChannelDispatchOperator())
-                .name("ChannelDispatchOperator");
+                .name("ChannelDispatchOperator-" + jobLabel);
 
         // ── RateLimitOperator (채널별 keyBy 후 TPS 제어) ──────────────────────
         SingleOutputStreamOperator<SendMessage> rateLimitedStream = dispatchedStream
                 .keyBy(SendMessage::getChannel)
                 .process(new RateLimitOperator())
-                .name("RateLimitOperator");
+                .name("RateLimitOperator-" + jobLabel);
 
         // ── 채널별 Kafka Sink 분배 ─────────────────────────────────────────────
-        // SMS
         rateLimitedStream
                 .filter(msg -> "SMS".equals(msg.getChannel()))
-                .sinkTo(buildKafkaSink(TOPIC_DISPATCH_SMS))
-                .name("KafkaSink-SMS");
+                .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_SMS))
+                .name("KafkaSink-SMS-" + jobLabel);
 
-        // MMS
         rateLimitedStream
                 .filter(msg -> "MMS".equals(msg.getChannel()))
-                .sinkTo(buildKafkaSink(TOPIC_DISPATCH_MMS))
-                .name("KafkaSink-MMS");
+                .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_MMS))
+                .name("KafkaSink-MMS-" + jobLabel);
 
-        // RCS
         rateLimitedStream
                 .filter(msg -> "RCS".equals(msg.getChannel()))
-                .sinkTo(buildKafkaSink(TOPIC_DISPATCH_RCS))
-                .name("KafkaSink-RCS");
+                .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_RCS))
+                .name("KafkaSink-RCS-" + jobLabel);
 
-        // FAX
         rateLimitedStream
                 .filter(msg -> "FAX".equals(msg.getChannel()))
-                .sinkTo(buildKafkaSink(TOPIC_DISPATCH_FAX))
-                .name("KafkaSink-FAX");
+                .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_FAX))
+                .name("KafkaSink-FAX-" + jobLabel);
 
-        // EMAIL
         rateLimitedStream
                 .filter(msg -> "EMAIL".equals(msg.getChannel()))
-                .sinkTo(buildKafkaSink(TOPIC_DISPATCH_EMAIL))
-                .name("KafkaSink-EMAIL");
+                .sinkTo(buildKafkaSink(bootstrapServers, TOPIC_DISPATCH_EMAIL))
+                .name("KafkaSink-EMAIL-" + jobLabel);
 
         // PostgreSQL 발송 요청 이력 반영
         // - alreadyPersisted=false (실시간/준실시간, 또는 예약시각이 이미 지난 배치건): 최초 INSERT
@@ -176,17 +176,15 @@ public class SendRequestJob {
         rateLimitedStream
                 .filter(msg -> !msg.isAlreadyPersisted())
                 .addSink(buildPostgresSink())
-                .name("PostgresSink-Request");
+                .name("PostgresSink-Request-" + jobLabel);
 
         rateLimitedStream
                 .filter(SendMessage::isAlreadyPersisted)
                 .addSink(buildPostgresReleaseUpdateSink())
-                .name("PostgresSink-ScheduledRelease");
+                .name("PostgresSink-ScheduledRelease-" + jobLabel);
 
-        LOG.info("[SendRequestJob] Job 시작: bootstrapServers={}, groupId={}",
-                BOOTSTRAP_SERVERS, GROUP_ID);
-
-        env.execute("AM-SendRequestJob");
+        LOG.info("[SendRequestJob_{}] Job 구성 완료: bootstrapServers={}, groupId={}, requestTopic={}",
+                jobLabel, bootstrapServers, groupId, requestTopic);
     }
 
     /**
@@ -208,14 +206,6 @@ public class SendRequestJob {
                     ps.setString(5, msg.getReceiver());
                     ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
-                    // ⭐️ 수정 (TS-0009 준비 - 채널 공유 시 지연 측정을 위해 필요):
-                    // 기존엔 requested_at에 NOW()(=이 INSERT가 실행되는 시각,
-                    // 즉 채널 게이트 통과 완료 시각과 항상 동일)를 넣고 있어
-                    // "요청→통과 소요시간"을 전혀 계산할 수 없었다.
-                    // 클라이언트가 보낸 실제 요청 시각(requestedAt)을 사용하고,
-                    // dispatched_at(=NOW(), 이 INSERT 실행 시각)을 함께 기록하여
-                    // dispatched_at - requested_at 으로 소요시간을 계산할 수 있게 한다.
-                    // (배치/예약 경로의 buildScheduledLogPostgresSink()와 동일한 방식)
                     ps.setTimestamp(8, msg.getRequestedAt() != null && !msg.getRequestedAt().trim().isEmpty()
                             ? Timestamp.from(OffsetDateTime.parse(msg.getRequestedAt()).toInstant())
                             : Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())));
@@ -236,7 +226,6 @@ public class SendRequestJob {
 
     /**
      * 예약 발송 대기 등록 시점에 SCHEDULED 상태로 1회 INSERT하는 Sink.
-     * (ScheduleGateOperator의 side output, 즉 예약 대기가 시작되는 시점에만 호출됨)
      */
     private static org.apache.flink.streaming.api.functions.sink.SinkFunction<SendMessage>
             buildScheduledLogPostgresSink() {
@@ -249,15 +238,12 @@ public class SendRequestJob {
                 (ps, msg) -> {
                     ps.setString(1, msg.getTxId());
                     ps.setString(2, msg.getChannel());
-                    ps.setString(3, msg.getStatus()); // ScheduleGateOperator가 "SCHEDULED"로 설정해둠
+                    ps.setString(3, msg.getStatus());
                     ps.setString(4, msg.getSender());
                     ps.setString(5, msg.getReceiver());
                     ps.setInt(6, msg.getRetryCount());
                     ps.setString(7, msg.getSource());
-                    // OffsetDateTime.parse(): UTC(...Z)와 시간대 포함(...+09:00) 형식 모두 지원
-                    // (Instant.parse()는 UTC(Z)만 지원해 +09:00 형식에서 예외가 발생하던 버그 수정)
                     ps.setTimestamp(8, Timestamp.from(OffsetDateTime.parse(msg.getScheduledAt()).toInstant()));
-                    // requestedAt이 요청 전문에 있으면 그 값을, 없으면 현재 시각(=예약 접수 시각)을 사용
                     ps.setTimestamp(9, msg.getRequestedAt() != null && !msg.getRequestedAt().trim().isEmpty()
                             ? Timestamp.from(OffsetDateTime.parse(msg.getRequestedAt()).toInstant())
                             : Timestamp.from(Instant.ofEpochMilli(System.currentTimeMillis())));
@@ -278,14 +264,13 @@ public class SendRequestJob {
 
     /**
      * 예약 시각 도래로 파이프라인에 재투입된 건의 상태를 갱신하는 Sink.
-     * INSERT가 아닌 UPDATE — 해당 tx_id row는 buildScheduledLogPostgresSink()에서 이미 생성됨.
      */
     private static org.apache.flink.streaming.api.functions.sink.SinkFunction<SendMessage>
             buildPostgresReleaseUpdateSink() {
         return JdbcSink.sink(
                 "UPDATE msg_send_history SET status = ?, dispatched_at = NOW() WHERE tx_id = ?",
                 (ps, msg) -> {
-                    ps.setString(1, msg.getStatus()); // ChannelDispatchOperator가 "DISPATCHING"으로 갱신해둠
+                    ps.setString(1, msg.getStatus());
                     ps.setString(2, msg.getTxId());
                 },
                 JdbcExecutionOptions.builder()
@@ -305,20 +290,20 @@ public class SendRequestJob {
     /**
      * SendMessage를 JSON 직렬화하여 지정 토픽으로 발행하는 KafkaSink 생성.
      */
-    private static KafkaSink<SendMessage> buildKafkaSink(String topic) {
-        
+    private static KafkaSink<SendMessage> buildKafkaSink(String bootstrapServers, String topic) {
+
         org.apache.flink.api.common.serialization.SerializationSchema<SendMessage> serializer =
                 value -> {
                     try {
                         return MAPPER.writeValueAsBytes(value);
                     } catch (Exception e) {
-                        LOG.error("[SendRequestJob] 직렬화 실패: {}", value, e);
+                        LOG.error("[RequestPipelineBuilder] 직렬화 실패: {}", value, e);
                         return new byte[0];
                     }
                 };
 
         return KafkaSink.<SendMessage>builder()
-                .setBootstrapServers(BOOTSTRAP_SERVERS)
+                .setBootstrapServers(bootstrapServers)
                 .setRecordSerializer(
                         KafkaRecordSerializationSchema.<SendMessage>builder()
                                 .setTopic(topic)

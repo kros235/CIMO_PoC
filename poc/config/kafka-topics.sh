@@ -18,13 +18,24 @@ sleep 10
 echo "Creating Kafka topics via container: $KAFKA_CONTAINER"
 
 # 1. 수집 토픽 — 발송 요청 최초 인입
+# ⭐️ 변경(Day 8, 실시간·배치 요청 라인 분리 - 방안 A): 단일 topic.send.request를
+#   실시간/배치 2개로 분리. 배치 폭주가 실시간 처리에 영향을 주지 않도록 인입
+#   단계부터 물리적으로 나눈다 (§16.11~16.12 실측 근거).
 docker exec $KAFKA_CONTAINER kafka-topics \
   --create --if-not-exists \
-  --topic topic.send.request \
+  --topic topic.send.request.realtime \
   --bootstrap-server localhost:9092 \
   --partitions 12 --replication-factor 1 \
   --config retention.ms=86400000
-echo "  ✅ topic.send.request"
+echo "  ✅ topic.send.request.realtime"
+
+docker exec $KAFKA_CONTAINER kafka-topics \
+  --create --if-not-exists \
+  --topic topic.send.request.batch \
+  --bootstrap-server localhost:9092 \
+  --partitions 6 --replication-factor 1 \
+  --config retention.ms=86400000
+echo "  ✅ topic.send.request.batch"
 
 # 2. 채널별 분배 토픽 (5개)
 docker exec $KAFKA_CONTAINER kafka-topics \
@@ -109,4 +120,4 @@ docker exec $KAFKA_CONTAINER kafka-topics \
   --list --bootstrap-server localhost:9092 | grep "^topic\."
 
 echo ""
-echo "✅ 10 Kafka topics created successfully!"
+echo "✅ 11 Kafka topics created successfully!"

@@ -18,7 +18,7 @@
 #   2. ZooKeeper, Kafka 정상 응답 대기
 #   3. Kafka 토픽 11개 생성 (idempotent)
 #   4. Adapter 5개 기동
-#   5. Flink Job 3개 제출 (좀비 Job 자동 정리 포함)
+#   5. Flink Job 4개 제출 (좀비 Job 자동 정리 포함) — ⭐️Day 8: SendRequestJob 실시간/배치 분리로 3개→4개
 #   6. 헬스체크 종합 리포트
 
 set -e  # 에러 발생 시 즉시 중단
@@ -266,8 +266,16 @@ fi
 log_step "3단계: Kafka 토픽 11개 생성 (idempotent) + 파티션 수 정합성 보정"
 # ═════════════════════════════════════════════════════════
 
+# ⭐️ 변경(Day 8, 실시간·배치 요청 라인 분리 - 방안 A):
+#   기존 단일 "topic.send.request"(12파티션)를 아래 2개로 교체.
+#   - topic.send.request.realtime : sendMethodCode 03,04,05 (기존과 동일 12파티션 유지)
+#   - topic.send.request.batch    : sendMethodCode 01,02 (배치 폭주 격리를 위해 별도 파티션 6개)
+#   그동안 실제로 어디서도 구독·발행하지 않던 예약 토픽 "topic.send.batch"(3파티션)는
+#   이번 분리로 역할이 명확해진 topic.send.request.batch로 대체되어 제거함.
+#   → 토픽 총 개수는 기존과 동일하게 11개 유지.
 declare -A TOPIC_TARGET_PARTITIONS=(
-    ["topic.send.request"]=12
+    ["topic.send.request.realtime"]=12
+    ["topic.send.request.batch"]=6
     ["topic.send.dispatch.sms"]=6
     ["topic.send.dispatch.mms"]=6
     ["topic.send.dispatch.rcs"]=6
@@ -276,12 +284,12 @@ declare -A TOPIC_TARGET_PARTITIONS=(
     ["topic.send.result"]=12
     ["topic.send.retry"]=6
     ["topic.send.dlq"]=3
-    ["topic.send.batch"]=3
     ["topic.monitor.metrics"]=3
 )
 
 TOPICS=(
-    "topic.send.request"
+    "topic.send.request.realtime"
+    "topic.send.request.batch"
     "topic.send.dispatch.sms"
     "topic.send.dispatch.mms"
     "topic.send.dispatch.rcs"
@@ -290,7 +298,6 @@ TOPICS=(
     "topic.send.result"
     "topic.send.retry"
     "topic.send.dlq"
-    "topic.send.batch"
     "topic.monitor.metrics"
 )
 
@@ -374,8 +381,12 @@ fi
 log_info "Flink fat-jar 컨테이너 내부로 복사..."
 docker cp am-flink-fat.jar am-flink-jobmanager:/tmp/am-flink-fat.jar > /dev/null
 
-# 5-3. Job 3개 제출
-JOB_CLASSES=("SendRequestJob" "SendResultJob" "RetryJob")
+# 5-3. Job 4개 제출
+# ⭐️ 변경(Day 8, 실시간·배치 요청 라인 분리 - 방안 A):
+#   기존 "SendRequestJob" 1개를 "SendRequestJob_Realtime" / "SendRequestJob_Batch"
+#   2개의 독립된 Flink Job으로 분리. 각자 별도 Consumer Group·별도 슬롯을 가져,
+#   배치 Job이 아무리 밀려도 실시간 Job의 처리 자원에 물리적으로 영향을 주지 않음.
+JOB_CLASSES=("SendRequestJob_Realtime" "SendRequestJob_Batch" "SendResultJob" "RetryJob")
 for cls in "${JOB_CLASSES[@]}"; do
     log_info "  제출 중: $cls (parallelism=${FLINK_JOB_PARALLELISM:-4})"
     docker exec am-flink-jobmanager flink run -d \

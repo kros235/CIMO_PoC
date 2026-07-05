@@ -485,7 +485,7 @@ def _configure_processor(nifi_uuid: str, proc_def: dict) -> None:
     # 자동 종료할 relationship 결정
     # - relationships에 없는 기본 relationship은 auto-terminate 필요
     # - proc_def["relationships"]에 명시된 것은 Connection으로 연결될 예정이므로 제외
-    all_rels = _get_processor_relationships(proc_def["type"])
+    all_rels = _get_processor_relationships(proc_def["type"], proc_def)
     defined_rels = set(proc_def.get("relationships", {}).keys())
     auto_terminate = [r for r in all_rels if r not in defined_rels]
 
@@ -512,11 +512,29 @@ def _configure_processor(nifi_uuid: str, proc_def: dict) -> None:
     api_put(f"/processors/{nifi_uuid}", payload)
 
 
-def _get_processor_relationships(proc_type: str) -> list[str]:
+def _get_processor_relationships(proc_type: str, proc_def: dict = None) -> list[str]:
     """
     Processor 타입별 기본 relationship 목록.
     (실제 NiFi에서 Processor 생성 후 조회해도 되지만, 속도를 위해 하드코딩)
+
+    ⭐️ 변경(Day 8, 실시간·배치 요청 라인 분리): RouteOnAttribute는 "Routing Strategy"
+    설정에 따라 실제 relationship 이름이 달라진다.
+      - "Route to 'match' if all match" 등 → 고정된 matched/unmatched
+      - "Route to Property name"           → property 이름 하나당 relationship 1개 생성
+                                              (+ 조건에 안 걸린 FlowFile을 위한 unmatched)
+    기존에는 RouteOnAttribute를 항상 ["matched", "unmatched"]로 하드코딩해서, "Route to
+    Property name" 전략을 쓰는 신규 라우팅 Processor(realtime/batch 분기)의 자동종료
+    대상을 잘못 계산하는 문제가 있어 proc_def를 받아 동적으로 판단하도록 수정한다.
     """
+    ROA = "org.apache.nifi.processors.standard.RouteOnAttribute"
+    if proc_type == ROA and proc_def is not None:
+        routing_strategy = proc_def.get("properties", {}).get("Routing Strategy", "")
+        if routing_strategy == "Route to Property name":
+            control_keys = {"Routing Strategy", "Max Concurrent Tasks"}
+            dynamic_rels = [k for k in proc_def.get("properties", {}).keys()
+                             if k not in control_keys]
+            return dynamic_rels + ["unmatched"]
+
     REL_MAP = {
         "org.apache.nifi.processors.standard.ListenHTTP":        ["success"],
         "org.apache.nifi.processors.standard.EvaluateJsonPath":  ["matched", "unmatched", "failure"],
