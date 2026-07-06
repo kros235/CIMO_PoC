@@ -137,38 +137,49 @@ def scan_flink_logs_for_fallbacks(target_tx_ids: set, since_minutes: int = 5) ->
     Returns:
         List of dicts {txId} for each fallback matching our injection batch.
     """
-    cmd = [
-        "docker", "logs", "docker-taskmanager-1",
-        "--since", f"{since_minutes}m",
-    ]
-    env = os.environ.copy()
-    if IS_WINDOWS:
-        env["MSYS_NO_PATHCONV"] = "1"
-    try:
-        # CHANGE: Explicitly set UTF-8 encoding with error replacement.
-        # Windows Python defaults subprocess text mode to cp949, which fails on
-        # Flink log lines containing "→" (the fallback arrow character, UTF-8
-        # bytes 0xE2 0x86 0x92). Setting encoding='utf-8' + errors='replace'
-        # ensures we get the stdout/stderr strings without UnicodeDecodeError.
-        result = subprocess.run(
-            cmd, capture_output=True,
-            text=True, encoding="utf-8", errors="replace",
-            timeout=15, env=env,
-        )
-    except subprocess.TimeoutExpired:
-        return []
+    # ⭐️ 변경(노트북B 검증 중 발견): 기존엔 docker-taskmanager-1의 로그만
+    # 확인했으나, RCS 채널을 처리하는 일꾼(subtask)이 어느 TaskManager
+    # 컨테이너에 배정될지는 기동할 때마다 달라질 수 있다. 노트북B에서는
+    # 그 일꾼이 docker-taskmanager-2에 배정되어, 실제로는 로그가 정상
+    # 기록됐는데도 이 스캔이 "0건 발견"으로 잘못 판정했다(카프카 토픽에는
+    # 실제로 8건이 도착한 것으로 별도 확인됨 - 기능 자체는 정상). 두
+    # TaskManager 컨테이너 모두 확인하도록 수정한다.
+    def _fetch_container_logs(container_name: str) -> list:
+        cmd = [
+            "docker", "logs", container_name,
+            "--since", f"{since_minutes}m",
+        ]
+        env = os.environ.copy()
+        if IS_WINDOWS:
+            env["MSYS_NO_PATHCONV"] = "1"
+        try:
+            # CHANGE: Explicitly set UTF-8 encoding with error replacement.
+            # Windows Python defaults subprocess text mode to cp949, which fails on
+            # Flink log lines containing "→" (the fallback arrow character, UTF-8
+            # bytes 0xE2 0x86 0x92). Setting encoding='utf-8' + errors='replace'
+            # ensures we get the stdout/stderr strings without UnicodeDecodeError.
+            result = subprocess.run(
+                cmd, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+                timeout=15, env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return []
 
-    # Defensive: if subprocess still returned None for any stream, treat as empty
-    stdout_lines = (result.stdout or "").splitlines()
-    stderr_lines = (result.stderr or "").splitlines()
+        # Defensive: if subprocess still returned None for any stream, treat as empty
+        stdout_lines = (result.stdout or "").splitlines()
+        stderr_lines = (result.stderr or "").splitlines()
+        return stderr_lines + stdout_lines
 
     # Log line pattern:
     #   2026-04-23 08:58:32,743 INFO ... [SendResultJob] RCS→SMS fallback 전환: txId=<35digits>
     matches = []
     seen_tx_ids = set()  # dedupe: same txId may appear multiple times if retried
     marker = "RCS→SMS fallback 전환: txId="
-    # CHANGE: use the safe lines lists computed above (handles None gracefully)
-    for line in stderr_lines + stdout_lines:
+    # ⭐️ 변경: taskmanager-1, taskmanager-2 두 컨테이너의 로그를 모두 합쳐서 검사
+    all_lines = _fetch_container_logs("docker-taskmanager-1") \
+        + _fetch_container_logs("docker-taskmanager-2")
+    for line in all_lines:
         if marker not in line:
             continue
         # Extract txId after the marker
