@@ -294,10 +294,33 @@ def run_tc_0010(tx_ids: list, sms_dispatch_before: int, fallback_count: int) -> 
         "Fallback re-dispatch (SMS dispatch topic receives RCS-origin fallbacks)",
     )
 
+    # ⭐️ 변경(데스크탑A·노트북B 양쪽에서 재현된 문제 수정): 기존엔 SMS 발송
+    # 토픽의 오프셋을 "딱 한 번만" 확인하고 끝냈다. 그런데 RCS→SMS 전환은
+    # RetryJob을 거쳐 재발송되는데, RetryJob의 첫 번째 재시도 대기시간이
+    # 정확히 30초로 고정되어 있다(RetryJob.java BACKOFF_MS[0]=30_000).
+    # TC-0009가 전환 이벤트를 "감지"한 시점과 실제로 SMS로 "재발송"되는
+    # 시점 사이에는 최소 30초의 간격이 항상 존재하는데, 기존 코드는 이
+    # 간격을 감안하지 않고 곧바로 한 번만 확인해서, 아직 30초 대기가 안
+    # 끝난 건들을 "누락"으로 잘못 판정하고 있었다. 최대 90초까지 5초
+    # 간격으로 재확인하도록 변경한다(다른 테스트의 폴링 방식과 동일한
+    # 패턴).
+    max_wait_sec = 90
+    poll_interval_sec = 5
+    elapsed = 0
+    sms_dispatch_after = sms_dispatch_before
+    sms_produced = 0
+
     try:
-        # SMS dispatch offset after pipeline processing
-        sms_dispatch_after = get_topic_offset_sum("topic.send.dispatch.sms")
-        sms_produced = sms_dispatch_after - sms_dispatch_before
+        while elapsed <= max_wait_sec:
+            sms_dispatch_after = get_topic_offset_sum("topic.send.dispatch.sms")
+            sms_produced = sms_dispatch_after - sms_dispatch_before
+            print_info(f"  [{elapsed:3d}s]  topic.send.dispatch.sms delta={sms_produced} "
+                       f"(목표 >= {fallback_count})")
+            if sms_produced >= fallback_count and sms_produced > 0:
+                break
+            time.sleep(poll_interval_sec)
+            elapsed += poll_interval_sec
+
         print_info(f"topic.send.dispatch.sms offset change: "
                    f"{sms_dispatch_before} → {sms_dispatch_after}  (delta={sms_produced})")
 
@@ -327,10 +350,12 @@ def run_tc_0010(tx_ids: list, sms_dispatch_before: int, fallback_count: int) -> 
                 },
             )
         else:
-            # Fewer SMS dispatches than fallbacks — could be timing (not yet re-dispatched)
+            # ⭐️ 변경: 최대 90초까지 재확인했는데도 부족하면 그때는 진짜
+            # 문제일 가능성이 높으므로, 안내 문구도 그에 맞게 수정한다.
             tc.finish_fail(
-                f"SMS dispatch delta ({sms_produced}) < fallback count ({fallback_count}). "
-                f"RetryJob may still be processing — try increasing WAIT_SEC.",
+                f"SMS dispatch delta ({sms_produced}) < fallback count ({fallback_count}) "
+                f"even after waiting up to {max_wait_sec}s (RetryJob 첫 재시도 대기시간 30초 "
+                f"감안하여 이미 충분히 기다림). RetryJob 자체 문제 가능성 있음.",
                 details={
                     "sms_dispatch_delta":  sms_produced,
                     "expected_fallbacks":  fallback_count,
